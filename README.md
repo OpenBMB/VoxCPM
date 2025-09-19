@@ -62,10 +62,12 @@ By default, when you first run the script, the model will be downloaded automati
 ### 2. Basic Usage
 ```python
 import soundfile as sf
+import numpy as np
 from voxcpm import VoxCPM
 
 model = VoxCPM.from_pretrained("openbmb/VoxCPM-0.5B")
 
+# Non-streaming
 wav = model.generate(
     text="VoxCPM is an innovative end-to-end TTS model from ModelBest, designed to generate highly expressive speech.",
     prompt_wav_path=None,      # optional: path to a prompt speech for voice cloning
@@ -81,6 +83,18 @@ wav = model.generate(
 
 sf.write("output.wav", wav, 16000)
 print("saved: output.wav")
+
+# Streaming
+chunks = []
+for chunk in model.generate_streaming(
+    text = "Streaming text to speech is easy with VoxCPM!",
+    # supports same args as above
+):
+    chunks.append(chunk)
+wav = np.concatenate(chunks)
+
+sf.write("output_streaming.wav", wav, 16000)
+print("saved: output_streaming.wav")
 ```
 
 ### 3. CLI Usage
