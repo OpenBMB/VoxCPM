@@ -32,6 +32,9 @@ We reduced the token rate in LM backbone from 12.5Hz to 6.25Hz (LocEnc&LocDiT pa
 - 📈 Provides a foundation for longer audio generation
 - 🏗️ Paves the way for training larger models in the future
 
+**Model Architecture Clarification**: The core architecture of VoxCPM1.5 remains unchanged from the technical report. The key modification is adjusting the patch size of the local modules (LocEnc & LocDiT) from 2 to 4, which reduces the LM processing rate from 12.5Hz to 6.25Hz. Since the local modules now need to handle longer contexts, we expanded their network depth, resulting in a slightly larger overall model parameter count.
+
+**Generation Speed Clarification**: Although the model parameters have increased, VoxCPM1.5 only requires 6.25 tokens to generate 1 second of audio (compared to 12.5 tokens in the previous version). While the displayed generation speed (xx it/s) may appear slower, the actual Real-Time Factor (RTF = audio duration / processing time) shows no difference or may even be faster.
 
 ## 🔧 Fine-tuning Support
 
@@ -82,7 +85,7 @@ We're continuously improving VoxCPM and working on exciting new features:
 
 ### Q: Has the stability issue been resolved?
 
-**A:** We have made stability optimizations in VoxCPM1.5, including improvements to the training data and model architecture. Based on community feedback, we collected some stability issues such as:
+**A:** We have made stability optimizations in VoxCPM1.5, including improvements to the inference code logic, training data, and model architecture. Based on community feedback, we collected some stability issues such as:
 - Increased noise and reverberation
 - Audio artifacts (e.g., howling/squealing)
 - Unstable speaking rate (speeding up)
@@ -90,7 +93,11 @@ We're continuously improving VoxCPM and working on exciting new features:
 - Noise artifacts at the beginning and end of audio
 - Synthesis issues with very short texts (e.g., "hello")
 
-While we have made improvements to these issues, they have not been completely resolved and may still occasionally occur, especially with very long or highly expressive inputs. We continue to work on further stability improvements in future versions.
+**What we've improved:**
+- By adjusting inference code logic and optimizing training data, we have largely fixed the beginning/ending artifacts.
+- By reducing the LM processing rate (12.5Hz → 6.25Hz), we have improved stability on longer speech generation cases.
+
+**What remains:** We acknowledge that long speech stability issues have not been completely resolved. Particularly for highly expressive or complex reference speech, error accumulation during autoregressive generation can still occur. We will continue to analyze and optimize this in future versions.
 
 ### Q: Does VoxCPM plan to support multilingual TTS?
 
