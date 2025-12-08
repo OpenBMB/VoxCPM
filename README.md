@@ -89,7 +89,7 @@ import soundfile as sf
 import numpy as np
 from voxcpm import VoxCPM
 
-model = VoxCPM.from_pretrained("openbmb/VoxCPM1.5")
+model = VoxCPM.from_pretrained("openbmb/VoxCPM1.5") # Set optimize=False to use VoxCPM on a background thread. Performance on higher end GPU's will stay the same.
 
 # Non-streaming
 wav = model.generate(
