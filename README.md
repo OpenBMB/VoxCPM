@@ -239,8 +239,8 @@ Please stay tuned for updates!
 - [x] Release the VoxCPM technical report.
 - [x] Support higher sampling rate (44.1kHz in VoxCPM-1.5).
 - [x] Support SFT and LoRA fine-tuning.
-- [] Multilingual Support (besides ZH/EN).
-- [] Controllable Speech Generation by Human Instruction.
+- [ ] Multilingual Support (besides ZH/EN).
+- [ ] Controllable Speech Generation by Human Instruction.
 
 
 
