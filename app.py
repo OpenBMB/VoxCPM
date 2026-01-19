@@ -119,6 +119,12 @@ def create_demo_interface(demo: VoxCPMDemo):
     # static assets (logo path)
     gr.set_static_paths(paths=[Path.cwd().absolute()/"assets"])
 
+    # ============================================================================
+    # SECURITY: Authentication is REQUIRED for this web interface
+    # This interface provides access to sensitive TTS generation capabilities
+    # Authentication is enforced via Gradio's built-in auth mechanism
+    # ============================================================================
+    
     with gr.Blocks(
         theme=gr.themes.Soft(
             primary_hue="blue",
@@ -267,8 +273,31 @@ def create_demo_interface(demo: VoxCPMDemo):
 def run_demo(server_name: str = "localhost", server_port: int = 7860, show_error: bool = True):
     demo = VoxCPMDemo()
     interface = create_demo_interface(demo)
+    
+    # Security: Add authentication to protect the web interface
+    # Credentials can be set via environment variables or use defaults
+    auth_username = os.environ.get("WEBUI_USERNAME", "admin")
+    auth_password = os.environ.get("WEBUI_PASSWORD")
+    
+    if not auth_password:
+        # Generate a secure random password if not provided
+        import secrets
+        import string
+        auth_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(16))
+        print("=" * 80, file=sys.stderr)
+        print("⚠️  WARNING: No WEBUI_PASSWORD environment variable set!", file=sys.stderr)
+        print(f"⚠️  Generated temporary password: {auth_password}", file=sys.stderr)
+        print("⚠️  Please set WEBUI_USERNAME and WEBUI_PASSWORD environment variables for production use.", file=sys.stderr)
+        print("=" * 80, file=sys.stderr)
+    
     # Recommended to enable queue on Spaces for better throughput
-    interface.queue(max_size=10, default_concurrency_limit=1).launch(server_name=server_name, server_port=server_port, show_error=show_error)
+    interface.queue(max_size=10, default_concurrency_limit=1).launch(
+        server_name=server_name,
+        server_port=server_port,
+        show_error=show_error,
+        auth=(auth_username, auth_password),
+        auth_message="Please enter your credentials to access VoxCPM"
+    )
 
 
 if __name__ == "__main__":
