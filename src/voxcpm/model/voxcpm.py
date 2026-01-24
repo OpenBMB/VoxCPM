@@ -121,6 +121,12 @@ class VoxCPMModel(nn.Module):
                 self.device = "mps"
             else:
                 self.device = "cpu"
+        
+        # [Fix] Force CPU on macOS to avoid MPS issues with bfloat16/complex ops
+        if sys.platform == "darwin":
+            print("Detected macOS environment. Forcing 'cpu' and 'float32' to ensure stability.", file=sys.stderr)
+            self.device = "cpu"
+            self.config.dtype = "float32"
         print(f"Running on device: {self.device}, dtype: {self.config.dtype}", file=sys.stderr)
 
         # Text-Semantic LM
