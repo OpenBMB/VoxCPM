@@ -210,6 +210,7 @@ We're excited to see the VoxCPM community growing! Here are some amazing project
 - **[VoxCPM-NanoVLLM](https://github.com/a710128/nanovllm-voxcpm)** NanoVLLM integration for VoxCPM for faster, high-throughput inference on GPU.
 - **[VoxCPM-ONNX](https://github.com/bluryar/VoxCPM-ONNX)** ONNX export for VoxCPM supports faster CPU inference.
 - **[VoxCPMANE](https://github.com/0seba/VoxCPMANE)** VoxCPM TTS with Apple Neural Engine backend server.
+- **[VoxCPM-RKNN2](https://huggingface.co/happyme531/VoxCPM-0.5B-RKNN2)** Inference VoxCPM on Rockchip RK3588 with full RKNPU2 acceleration.
 - **[PR: LoRA finetune web UI (by Ayin1412)](https://github.com/OpenBMB/VoxCPM/pull/100)**
 - **[voxcpm_rs](https://github.com/madushan1000/voxcpm_rs)** A re-implementation of VoxCPM-0.5B in Rust.
 
