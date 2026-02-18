@@ -23,11 +23,14 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.14"
 dependencies = [
-    "torch>=2.5.0",
-    "torchaudio>=2.5.0",
-    "torchcodec",
+    "torch>=2.5.0,<2.6.0; sys_platform == 'darwin'",
+    "torch>=2.5.0; sys_platform != 'darwin'",
+    "torchaudio>=2.5.0,<2.6.0; sys_platform == 'darwin'",
+    "torchaudio>=2.5.0; sys_platform != 'darwin'",
+    "torchcodec==0.2.0; sys_platform == 'darwin'",
+    "torchcodec; sys_platform != 'darwin'",
     "transformers>=4.36.2",
     "einops",
     "gradio<6",

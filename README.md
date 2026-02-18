@@ -201,6 +201,28 @@ python scripts/train_voxcpm_finetune.py \
 
 ## 📚 More Information
 
+### 🍎 macOS Support (Apple Silicon)
+
+To run VoxCPM on macOS (Apple Silicon), we recommend following setup, using `uv`.
+We use `uv` to strictly manage dependencies and avoid version conflicts (like incompatible `torch` and `torchcodec` versions) that can occur with standard `pip`.
+
+You also need to install `ffmpeg` for audio processing:
+
+```bash
+brew install ffmpeg
+```
+
+Then, set up the Python environment:
+
+```bash
+uv sync
+source .venv/bin/activate
+```
+
+VoxCPM will then automatically detect macOS and run in CPU mode with float32 precision to ensure stability.
+
+> Running on CPU might be significantly slower than on GPU (CUDA). This mode is intended for Mac compatibility.
+
 ###  🌟 Community Projects
 We're excited to see the VoxCPM community growing! Here are some amazing projects and features built by our community:
 - **[ComfyUI-VoxCPM](https://github.com/wildminder/ComfyUI-VoxCPM)** A VoxCPM extension for ComfyUI.
