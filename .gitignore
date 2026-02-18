@@ -2,3 +2,7 @@ launch.json
 __pycache__
 voxcpm.egg-info
 .DS_Store
+
+build/
+dist/
+*.egg-info/
