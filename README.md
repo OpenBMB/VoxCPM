@@ -173,7 +173,23 @@ python -m voxcpm.cli --help
 
 ### 4. Start web demo
 
-You can start the UI interface by running `python app.py`, which allows you to perform Voice Cloning and Voice Creation.
+**⚠️ SECURITY NOTICE: Authentication Required**
+
+The web interfaces (`app.py` and `lora_ft_webui.py`) now require authentication to prevent unauthorized access. 
+
+**Setting Up Credentials:**
+```bash
+# Set environment variables before running
+export WEBUI_USERNAME="your_username"
+export WEBUI_PASSWORD="your_secure_password"
+
+# Then start the web UI
+python app.py
+```
+
+If no password is set, the system will generate a secure random password and display it in the console. **For production use, always set WEBUI_USERNAME and WEBUI_PASSWORD environment variables.**
+
+You can start the UI interface by running `python app.py` or `python lora_ft_webui.py`, which allows you to perform Voice Cloning, Voice Creation, and LoRA fine-tuning.
 
 ### 5. Fine-tuning
 

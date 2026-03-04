@@ -830,8 +830,17 @@ label {
 }
 """
 
+# ============================================================================
+# SECURITY: Authentication is REQUIRED for this web interface
+# This interface provides access to sensitive operations including:
+# - Model training (resource intensive)
+# - Model inference (computational resources)
+# - File system access for model checkpoints
+# Authentication is enforced via Gradio's built-in auth mechanism
+# ============================================================================
+
 with gr.Blocks(
-    title="VoxCPM LoRA WebUI",
+    title="VoxCPM LoRA WebUI - Secure Access",
     theme=gr.themes.Soft(),
     css=custom_css
 ) as app:
@@ -1251,4 +1260,26 @@ with gr.Blocks(
 if __name__ == "__main__":
     # Ensure lora directory exists
     os.makedirs("lora", exist_ok=True)
-    app.queue().launch(server_name="0.0.0.0", server_port=7860)
+    
+    # Security: Add authentication to protect the web interface
+    # Credentials can be set via environment variables or use defaults
+    auth_username = os.environ.get("WEBUI_USERNAME", "admin")
+    auth_password = os.environ.get("WEBUI_PASSWORD")
+    
+    if not auth_password:
+        # Generate a secure random password if not provided
+        import secrets
+        import string
+        auth_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(16))
+        print("=" * 80, file=sys.stderr)
+        print("⚠️  WARNING: No WEBUI_PASSWORD environment variable set!", file=sys.stderr)
+        print(f"⚠️  Generated temporary password: {auth_password}", file=sys.stderr)
+        print("⚠️  Please set WEBUI_USERNAME and WEBUI_PASSWORD environment variables for production use.", file=sys.stderr)
+        print("=" * 80, file=sys.stderr)
+    
+    app.queue().launch(
+        server_name="0.0.0.0",
+        server_port=7860,
+        auth=(auth_username, auth_password),
+        auth_message="Please enter your credentials to access VoxCPM LoRA WebUI"
+    )
