@@ -196,18 +196,22 @@ class MiniCPMAttention(nn.Module):
         key_cache[:, :, position_id, :] = key_states
         value_cache[:, :, position_id, :] = value_states
 
-        attn_mask = torch.arange(key_cache.size(2), device=key_cache.device) <= position_id
+        # Slice KV cache to actual sequence length instead of attending over the
+        # full static cache (max_length=8192). This avoids wasting compute on
+        # empty positions and allows SDPA to select the flash attention kernel
+        # (which does not support arbitrary attn_mask).
+        seq_end = position_id + 1
+        k_slice = key_cache[:, :, :seq_end, :].contiguous()
+        v_slice = value_cache[:, :, :seq_end, :].contiguous()
 
         # ref: https://github.com/pytorch/pytorch/issues/163597
         # there is a bug in MPS for non-contiguous tensors, so we need to make them contiguous
         query_states = query_states.contiguous()
-        key_cache = key_cache.contiguous()
-        value_cache = value_cache.contiguous()
         attn_output = torch.nn.functional.scaled_dot_product_attention(
             query_states,
-            key_cache,
-            value_cache,
-            attn_mask=attn_mask,
+            k_slice,
+            v_slice,
+            is_causal=False,  # q_len=1, no causal mask needed
             enable_gqa=True,
         )
 
