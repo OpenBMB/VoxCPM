@@ -119,3 +119,9 @@ def get_dtype(dtype: str):
         return torch.float32
     else:
         raise ValueError(f"Unsupported dtype: {dtype}")
+
+
+def resolve_runtime_device(preferred_device: str) -> str:
+    if preferred_device != "cuda":
+        return preferred_device
+    return "cuda" if torch.cuda.is_available() else "cpu"
