@@ -106,6 +106,7 @@ class VoxCPM:
         load_denoiser: bool = True,
         zipenhancer_model_id: str = "iic/speech_zipenhancer_ans_multiloss_16k_base",
         cache_dir: str = None,
+        revision: str | None = None,
         local_files_only: bool = False,
         optimize: bool = True,
         device: str | None = None,
@@ -122,6 +123,7 @@ class VoxCPM:
             zipenhancer_model_id: Denoiser model id or path for ModelScope
                 acoustic noise suppression.
             cache_dir: Custom cache directory for the snapshot.
+            revision: Optional Hugging Face revision (recommended: immutable commit SHA).
             local_files_only: If True, only use local files and do not attempt
                 to download.
             device: Runtime device. Use ``None``/``"auto"`` for automatic
@@ -157,6 +159,7 @@ class VoxCPM:
                 repo_id=repo_id,
                 cache_dir=cache_dir,
                 local_files_only=local_files_only,
+            revision=revision,
             )
 
         return cls(
