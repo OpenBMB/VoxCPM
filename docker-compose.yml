@@ -1,0 +1,54 @@
+services:
+  voxcpm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: voxcpm:latest
+    container_name: voxcpm-demo
+
+    # ── GPU access ─────────────────────────────────────────────────────────────
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    # ── Ports ──────────────────────────────────────────────────────────────────
+    ports:
+      - "8808:8808"
+
+    # ── Persistent volumes ─────────────────────────────────────────────────────
+    # Model weights (~4-6 GB) are cached here so they survive container restarts.
+    volumes:
+      - voxcpm-cache:/cache
+      # Optional: mount a local output directory
+      # - ./outputs:/app/outputs
+
+    # ── Environment ────────────────────────────────────────────────────────────
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - HF_HOME=/cache/huggingface
+      - MODELSCOPE_CACHE=/cache/modelscope
+      - TORCH_HOME=/cache/torch
+      - TRITON_CACHE_DIR=/cache/triton
+      - TORCHINDUCTOR_CACHE_DIR=/cache/inductor
+      # Fallback: decommentare se Triton crasha ancora (eager mode, ~2x più lento)
+      # - TORCHDYNAMO_DISABLE=1
+      # Uncomment to use a specific model version (default: openbmb/VoxCPM2)
+      # - VOXCPM_MODEL_ID=openbmb/VoxCPM2
+
+    # ── Restart policy ─────────────────────────────────────────────────────────
+    restart: unless-stopped
+
+    # ── Custom entrypoint (supports VOXCPM_MODEL_ID env var) ──────────────────
+    command: >
+      python app.py
+      --port 8808
+      ${VOXCPM_MODEL_ID:+--model-id $VOXCPM_MODEL_ID}
+
+volumes:
+  voxcpm-cache:
+    driver: local
