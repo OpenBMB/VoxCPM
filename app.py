@@ -1,9 +1,11 @@
 import os
 import sys
 import logging
+import tempfile
 import numpy as np
 import torch
 import gradio as gr
+import soundfile as sf
 from typing import Optional, Tuple
 from funasr import AutoModel
 from pathlib import Path
@@ -234,6 +236,10 @@ class VoxCPMDemo:
         self.voxcpm_model: Optional[voxcpm.VoxCPM] = None
         self._model_id = model_id
 
+        # Cache for reference audio to avoid Gradio temp file cleanup issues
+        self._cached_audio_path: Optional[str] = None
+        self._cached_audio_data: Optional[Tuple[int, np.ndarray]] = None
+
     def get_or_load_voxcpm(self) -> voxcpm.VoxCPM:
         if self.voxcpm_model is not None:
             return self.voxcpm_model
@@ -241,6 +247,63 @@ class VoxCPMDemo:
         self.voxcpm_model = voxcpm.VoxCPM.from_pretrained(self._model_id, optimize=True)
         logger.info("Model loaded successfully.")
         return self.voxcpm_model
+
+    def _get_stable_audio_path(self, audio_path: Optional[str]) -> Optional[str]:
+        """Get a stable audio path by caching audio data to avoid Gradio temp file cleanup issues.
+
+        When Gradio provides a temp file path for uploaded/recorded audio, that file may be
+        cleaned up after the first generation attempt. This method reads the audio data and
+        saves it to a persistent temp file that survives multiple generation calls.
+
+        Args:
+            audio_path: The audio file path provided by Gradio (may be a temp file)
+
+        Returns:
+            A stable path to the cached audio file, or None if input is None
+        """
+        if audio_path is None:
+            # Clear cache when no audio provided
+            self._cached_audio_path = None
+            self._cached_audio_data = None
+            return None
+
+        # Check if we already have this audio cached
+        if self._cached_audio_path == audio_path and self._cached_audio_data is not None:
+            # Audio path matches cache, but verify the cached file still exists
+            cached_sr, cached_wav = self._cached_audio_data
+            cached_file = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+            try:
+                sf.write(cached_file.name, cached_wav, cached_sr)
+                logger.info(f"Using cached audio data, saved to: {cached_file.name}")
+                return cached_file.name
+            except Exception as e:
+                logger.warning(f"Failed to write cached audio: {e}")
+                cached_file.close()
+                os.unlink(cached_file.name)
+
+        # Try to read the audio file
+        try:
+            audio_data, sr = sf.read(audio_path)
+            # Ensure mono
+            if len(audio_data.shape) > 1:
+                audio_data = audio_data.mean(axis=1)
+            audio_data = audio_data.astype(np.float32)
+
+            # Cache the audio data
+            self._cached_audio_path = audio_path
+            self._cached_audio_data = (sr, audio_data)
+
+            # Create a new stable temp file
+            cached_file = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+            sf.write(cached_file.name, audio_data, sr)
+            logger.info(f"Read audio from {audio_path}, cached to: {cached_file.name}")
+            return cached_file.name
+        except Exception as e:
+            logger.warning(f"Failed to read audio file {audio_path}: {e}")
+            # If the original file still exists, try using it directly
+            if os.path.exists(audio_path):
+                return audio_path
+            return None
 
     def prompt_wav_recognition(self, prompt_wav: Optional[str]) -> str:
         if prompt_wav is None:
@@ -292,7 +355,8 @@ class VoxCPMDemo:
         control = (control_instruction or "").strip()
         final_text = f"({control}){text}" if control else text
 
-        audio_path = reference_wav_path_input if reference_wav_path_input else None
+        # Use cached audio path to avoid Gradio temp file cleanup issues
+        audio_path = self._get_stable_audio_path(reference_wav_path_input)
         prompt_text_clean = (prompt_text or "").strip() or None
 
         if audio_path and prompt_text_clean:
@@ -364,7 +428,12 @@ def create_demo_interface(demo: VoxCPMDemo):
             return gr.update()
         try:
             logger.info("Running ASR on reference audio...")
-            asr_text = demo.prompt_wav_recognition(audio_path)
+            # Use cached audio path for ASR to avoid temp file cleanup issues
+            stable_audio_path = demo._get_stable_audio_path(audio_path)
+            if stable_audio_path is None:
+                logger.warning("Could not get stable audio path for ASR")
+                return gr.update(value="")
+            asr_text = demo.prompt_wav_recognition(stable_audio_path)
             logger.info(f"ASR result: {asr_text[:60]}...")
             return gr.update(value=asr_text)
         except Exception as e:

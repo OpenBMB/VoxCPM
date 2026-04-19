@@ -224,10 +224,12 @@ class VoxCPMModel(nn.Module):
             self.residual_lm.forward_step = torch.compile(
                 self.residual_lm.forward_step, mode="reduce-overhead", fullgraph=True
             )
+            # Use default mode for feat_encoder to avoid CUDA graphs issues with dynamic shapes
+            # reduce-overhead mode requires fixed input shapes (CUDA graphs)
             self._feat_encoder_raw = self.feat_encoder
-            self.feat_encoder = torch.compile(self.feat_encoder, mode="reduce-overhead", fullgraph=True)
+            self.feat_encoder = torch.compile(self.feat_encoder, mode="default")
             self.feat_decoder.estimator = torch.compile(
-                self.feat_decoder.estimator, mode="reduce-overhead", fullgraph=True
+                self.feat_decoder.estimator, mode="default"
             )
         except Exception as e:
             print(f"Warning: torch.compile disabled - {e}", file=sys.stderr)
