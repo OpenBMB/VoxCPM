@@ -1,6 +1,14 @@
+import os
 from typing import List, Optional
 import torch
 from transformers import PreTrainedTokenizer
+
+_LOW_PRECISION_DTYPES = {"bfloat16", "bf16", "float16", "fp16"}
+_VALID_DTYPE_OVERRIDES = {
+    "bfloat16", "bf16",
+    "float16", "fp16",
+    "float32", "fp32",
+}
 
 
 # Ref: https://github.com/OpenBMB/VoxCPM/issues/256#issuecomment-4235252732
@@ -133,6 +141,34 @@ def get_dtype(dtype: str):
 
 def _has_mps() -> bool:
     return hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+
+
+def pick_runtime_dtype(device: str, configured_dtype: str) -> str:
+    """Pick a safe runtime dtype for the resolved device.
+
+    On Apple Silicon (MPS), bfloat16/float16 produce enough numerical drift
+    in the diffusion AR loop that the output is glitched and the model's
+    badcase detector triggers infinite retries. float32 is the only stable
+    option today. CUDA and CPU keep whatever the checkpoint was trained with.
+
+    Users can override with ``VOXCPM_MPS_DTYPE`` (e.g. ``bfloat16``) when
+    they want to test future MPS improvements.
+    """
+    if device != "mps":
+        return configured_dtype
+
+    override = os.environ.get("VOXCPM_MPS_DTYPE", "").strip().lower()
+    if override:
+        if override not in _VALID_DTYPE_OVERRIDES:
+            raise ValueError(
+                f"VOXCPM_MPS_DTYPE='{override}' is not one of "
+                f"{sorted(_VALID_DTYPE_OVERRIDES)}"
+            )
+        return override
+
+    if (configured_dtype or "").lower() in _LOW_PRECISION_DTYPES:
+        return "float32"
+    return configured_dtype
 
 
 def auto_select_device(preferred_device: Optional[str] = "cuda") -> str:

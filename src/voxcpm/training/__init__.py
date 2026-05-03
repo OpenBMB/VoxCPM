@@ -15,6 +15,7 @@ from .data import (
     BatchProcessor,
 )
 from .state import TrainingState
+from .validate import validate_manifest, ValidationResult
 
 __all__ = [
     "Accelerator",
@@ -24,4 +25,6 @@ __all__ = [
     "TrainingState",
     "load_audio_text_datasets",
     "build_dataloader",
+    "validate_manifest",
+    "ValidationResult",
 ]
