@@ -46,6 +46,12 @@ def validate_ranges(args, parser):
     if not (1 <= args.inference_timesteps <= 100):
         parser.error("--inference-timesteps must be between 1 and 100 (recommended: 4–30)")
 
+    if getattr(args, "long_form", False):
+        if args.long_form_max_chars <= 0:
+            parser.error("--long-form-max-chars must be a positive integer")
+        if args.long_form_silence_ms < 0:
+            parser.error("--long-form-silence-ms must be non-negative")
+
     if args.lora_r <= 0:
         parser.error("--lora-r must be a positive integer")
 
@@ -251,17 +257,33 @@ def _run_single(args, parser, *, text: str, output: str, prompt_text: str | None
 
     model = load_model(args)
 
-    audio_array = model.generate(
-        text=text,
-        prompt_wav_path=args.prompt_audio,
-        prompt_text=prompt_text,
-        reference_wav_path=args.reference_audio,
-        cfg_value=args.cfg_value,
-        inference_timesteps=args.inference_timesteps,
-        normalize=args.normalize,
-        denoise=args.denoise
-        and (args.prompt_audio is not None or args.reference_audio is not None),
-    )
+    if args.long_form:
+        audio_array = model.generate_long_form(
+            text=text,
+            control=args.control,
+            prompt_wav_path=args.prompt_audio,
+            prompt_text=prompt_text,
+            reference_wav_path=args.reference_audio,
+            cfg_value=args.cfg_value,
+            inference_timesteps=args.inference_timesteps,
+            normalize=args.normalize,
+            denoise=args.denoise
+            and (args.prompt_audio is not None or args.reference_audio is not None),
+            max_chars=args.long_form_max_chars,
+            silence_ms=args.long_form_silence_ms,
+        )
+    else:
+        audio_array = model.generate(
+            text=build_final_text(text, args.control),
+            prompt_wav_path=args.prompt_audio,
+            prompt_text=prompt_text,
+            reference_wav_path=args.reference_audio,
+            cfg_value=args.cfg_value,
+            inference_timesteps=args.inference_timesteps,
+            normalize=args.normalize,
+            denoise=args.denoise
+            and (args.prompt_audio is not None or args.reference_audio is not None),
+        )
 
     import soundfile as sf
 
@@ -273,17 +295,15 @@ def _run_single(args, parser, *, text: str, output: str, prompt_text: str | None
 
 def cmd_design(args, parser):
     validate_design_args(args, parser)
-    final_text = build_final_text(args.text, args.control)
     return _run_single(
-        args, parser, text=final_text, output=args.output, prompt_text=None
+        args, parser, text=args.text, output=args.output, prompt_text=None
     )
 
 
 def cmd_clone(args, parser):
     prompt_text = validate_clone_args(args, parser)
-    final_text = build_final_text(args.text, args.control)
     return _run_single(
-        args, parser, text=final_text, output=args.output, prompt_text=prompt_text
+        args, parser, text=args.text, output=args.output, prompt_text=prompt_text
     )
 
 
@@ -389,6 +409,23 @@ def _add_common_generation_args(parser):
     )
     parser.add_argument(
         "--normalize", action="store_true", help="Enable text normalization"
+    )
+    parser.add_argument(
+        "--long-form",
+        action="store_true",
+        help="Generate long text as short prompted segments to reduce voice drift",
+    )
+    parser.add_argument(
+        "--long-form-max-chars",
+        type=int,
+        default=90,
+        help="Maximum characters per long-form segment (default: 90)",
+    )
+    parser.add_argument(
+        "--long-form-silence-ms",
+        type=int,
+        default=300,
+        help="Inserted silence between long-form segments in milliseconds (default: 300)",
     )
 
 

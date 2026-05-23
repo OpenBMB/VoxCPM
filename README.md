@@ -201,6 +201,22 @@ sf.write("streaming.wav", wav, model.tts_model.sample_rate)
 ```
 </details>
 
+#### 📖 Long-Form Generation
+
+For long scripts, `generate_long_form()` splits text into shorter segments, uses the first generated segment as the
+VoxCPM2 reference when no external reference is provided, and chains later segments with the previous segment as the
+continuation prompt.
+
+```python
+wav = model.generate_long_form(
+    text="First paragraph. Second paragraph. Third paragraph.",
+    control="Warm, steady narrator voice",
+    max_chars=120,
+    silence_ms=300,
+)
+sf.write("long_form.wav", wav, model.tts_model.sample_rate)
+```
+
 ### CLI Usage
 
 ```bash
@@ -214,6 +230,14 @@ voxcpm design \
   --text "VoxCPM2 brings studio-quality multilingual speech synthesis." \
   --control "Young female voice, warm and gentle, slightly smiling" \
   --output out.wav
+
+# Long-form voice design
+voxcpm design \
+  --text "First paragraph. Second paragraph. Third paragraph." \
+  --control "Warm, steady narrator voice" \
+  --long-form \
+  --long-form-max-chars 120 \
+  --output long_form.wav
 
 # Voice cloning (reference audio)
 voxcpm clone \
