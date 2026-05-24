@@ -203,9 +203,8 @@ sf.write("streaming.wav", wav, model.tts_model.sample_rate)
 
 #### 📖 Long-Form Generation
 
-For long scripts, `generate_long_form()` splits text into shorter segments, uses the first generated segment as the
-VoxCPM2 reference when no external reference is provided, and chains later segments with the previous segment as the
-continuation prompt.
+For long scripts, `generate_long_form()` splits text into shorter segments and reuses the first generated segment as the
+stable prompt/reference anchor for later segments.
 
 ```python
 wav = model.generate_long_form(

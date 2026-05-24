@@ -256,6 +256,7 @@ class VoxCPM:
         """
         segments = _split_long_text_for_tts(text, max_chars=max_chars)
         control = (control or "").strip()
+
         first_text = f"({control}){segments[0]}" if control else segments[0]
 
         common_kwargs = {
@@ -311,15 +312,15 @@ class VoxCPM:
             if stable_reference_path is None and can_use_reference:
                 stable_reference_path = write_segment("seed_reference.wav", first_wav)
 
-            previous_prompt_path = write_segment("segment_001.wav", first_wav)
-            previous_prompt_text = segments[0]
+            seed_prompt_path = write_segment("segment_001.wav", first_wav)
+            seed_prompt_text = first_text
 
             for index, segment in enumerate(segments[1:], start=2):
                 wav = _as_mono_float32(
                     self.generate(
                         text=segment,
-                        prompt_wav_path=previous_prompt_path,
-                        prompt_text=previous_prompt_text,
+                        prompt_wav_path=seed_prompt_path,
+                        prompt_text=seed_prompt_text,
                         reference_wav_path=stable_reference_path if can_use_reference else None,
                         denoise=False,
                         **common_kwargs,
@@ -328,8 +329,7 @@ class VoxCPM:
                 if silence_len:
                     outputs.append(silence)
                 outputs.append(wav)
-                previous_prompt_path = write_segment(f"segment_{index:03d}.wav", wav)
-                previous_prompt_text = segment
+                write_segment(f"segment_{index:03d}.wav", wav)
 
         return np.concatenate(outputs).astype(np.float32, copy=False)
 

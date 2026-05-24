@@ -58,7 +58,7 @@ class _FakeVoxCPM(core.VoxCPM):
         return np.full(10, len(self.calls), dtype=np.float32)
 
 
-def test_generate_long_form_uses_seed_reference_and_previous_prompt():
+def test_generate_long_form_reuses_seed_prompt_with_control_context():
     model = _FakeVoxCPM()
 
     wav = model.generate_long_form(
@@ -76,12 +76,13 @@ def test_generate_long_form_uses_seed_reference_and_previous_prompt():
     assert model.calls[0][1]["reference_wav_path"] is None
 
     assert model.calls[1][0] == "Second!"
-    assert model.calls[1][1]["prompt_text"] == "First!"
+    assert model.calls[1][1]["prompt_text"] == "(steady narrator)First!"
     assert model.calls[1][1]["prompt_wav_path"]
     assert model.calls[1][1]["reference_wav_path"]
 
     assert model.calls[2][0] == "Third!"
-    assert model.calls[2][1]["prompt_text"] == "Second!"
+    assert model.calls[2][1]["prompt_text"] == "(steady narrator)First!"
+    assert model.calls[2][1]["prompt_wav_path"] == model.calls[1][1]["prompt_wav_path"]
     assert model.calls[2][1]["reference_wav_path"] == model.calls[1][1]["reference_wav_path"]
 
     assert wav.dtype == np.float32

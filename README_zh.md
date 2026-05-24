@@ -202,7 +202,7 @@ sf.write("streaming.wav", wav, model.tts_model.sample_rate)
 
 #### 📖 长文本生成
 
-对于较长文稿，`generate_long_form()` 会将文本切分为较短片段；在没有外部参考音频时，会使用首段生成结果作为 VoxCPM2 参考音色，并让后续片段以上一段为续写提示，从而降低长句一次性自回归生成带来的音色漂移风险。
+对于较长文稿，`generate_long_form()` 会将文本切分为较短片段，并使用首段生成结果作为后续片段的稳定 prompt/reference 锚点，从而降低长句一次性自回归生成带来的音色漂移风险。
 
 ```python
 wav = model.generate_long_form(
