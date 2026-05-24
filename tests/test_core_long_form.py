@@ -78,12 +78,12 @@ def test_generate_long_form_reuses_seed_prompt_with_control_context():
     assert model.calls[1][0] == "Second!"
     assert model.calls[1][1]["prompt_text"] == "First!"
     assert model.calls[1][1]["prompt_wav_path"]
-    assert model.calls[1][1]["reference_wav_path"]
+    assert model.calls[1][1]["reference_wav_path"] is None
 
     assert model.calls[2][0] == "Third!"
     assert model.calls[2][1]["prompt_text"] == "First!"
     assert model.calls[2][1]["prompt_wav_path"] == model.calls[1][1]["prompt_wav_path"]
-    assert model.calls[2][1]["reference_wav_path"] == model.calls[1][1]["reference_wav_path"]
+    assert model.calls[2][1]["reference_wav_path"] is None
 
     assert wav.dtype == np.float32
     assert wav.shape == (32,)

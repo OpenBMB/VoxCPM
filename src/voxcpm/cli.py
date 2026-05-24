@@ -418,14 +418,14 @@ def _add_common_generation_args(parser):
     parser.add_argument(
         "--long-form-max-chars",
         type=int,
-        default=90,
-        help="Maximum characters per long-form segment (default: 90)",
+        default=55,
+        help="Maximum characters per long-form segment (default: 55)",
     )
     parser.add_argument(
         "--long-form-silence-ms",
         type=int,
-        default=300,
-        help="Inserted silence between long-form segments in milliseconds (default: 300)",
+        default=180,
+        help="Inserted silence between long-form segments in milliseconds (default: 180)",
     )
 
 

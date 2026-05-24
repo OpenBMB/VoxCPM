@@ -244,15 +244,15 @@ class VoxCPM:
         retry_badcase: bool = True,
         retry_badcase_max_times: int = 3,
         retry_badcase_ratio_threshold: float = 6.0,
-        max_chars: int = 90,
-        silence_ms: int = 300,
+        max_chars: int = 55,
+        silence_ms: int = 180,
     ) -> np.ndarray:
         """Generate long-form speech as short anchored segments.
 
-        The first generated segment becomes a stable reference voice for
-        VoxCPM2 when no external reference is supplied. Later segments use that
-        same seed segment as both reference and continuation prompt so long
-        inputs do not rely on one very long autoregressive pass.
+        Later segments use the first generated segment as a fixed continuation
+        prompt so long inputs do not rely on one very long autoregressive pass.
+        An explicit external reference, when supplied, is kept as the stable
+        reference voice.
         """
         segments = _split_long_text_for_tts(text, max_chars=max_chars)
         control = (control or "").strip()
@@ -308,10 +308,6 @@ class VoxCPM:
             )
             outputs.append(first_wav)
 
-            stable_reference_path = reference_wav_path
-            if stable_reference_path is None and can_use_reference:
-                stable_reference_path = write_segment("seed_reference.wav", first_wav)
-
             seed_prompt_path = write_segment("segment_001.wav", first_wav)
             # prompt_text must match the spoken prompt audio. Voice-design control
             # text guides generation but is not part of the spoken transcript.
@@ -323,7 +319,7 @@ class VoxCPM:
                         text=segment,
                         prompt_wav_path=seed_prompt_path,
                         prompt_text=seed_prompt_text,
-                        reference_wav_path=stable_reference_path if can_use_reference else None,
+                        reference_wav_path=reference_wav_path if can_use_reference else None,
                         denoise=False,
                         **common_kwargs,
                     )
