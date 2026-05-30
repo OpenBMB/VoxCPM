@@ -112,7 +112,18 @@ def replace_blank(text: str):
     out_str = []
     for i, c in enumerate(text):
         if c == " ":
-            if (text[i + 1].isascii() and text[i + 1] != " ") and (text[i - 1].isascii() and text[i - 1] != " "):
+            # Keep a space only when it sits between two ASCII word characters.
+            # Guard the neighbour lookups: a trailing space would make text[i + 1]
+            # raise IndexError, and a leading space would make text[i - 1] wrap
+            # around to the last character. Edge spaces are not between two
+            # words, so they are dropped.
+            if (
+                0 < i < len(text) - 1
+                and text[i + 1].isascii()
+                and text[i + 1] != " "
+                and text[i - 1].isascii()
+                and text[i - 1] != " "
+            ):
                 out_str.append(c)
         else:
             out_str.append(c)
