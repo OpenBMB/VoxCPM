@@ -1,4 +1,5 @@
 import torch
+from typing import Optional
 from ..minicpm4 import MiniCPMModel, MiniCPM4Config
 import torch.nn as nn
 import math
@@ -27,7 +28,7 @@ class TimestepEmbedding(nn.Module):
         self,
         in_channels: int,
         time_embed_dim: int,
-        out_dim: int = None,
+        out_dim: Optional[int] = None,
     ):
         super().__init__()
 
