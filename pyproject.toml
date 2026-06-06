@@ -7,7 +7,7 @@ name = "voxcpm"
 dynamic = ["version"]
 description = "VoxCPM: Tokenizer-Free TTS for Context-Aware Speech Generation and True-to-Life Voice Cloning"
 readme = "README.md"
-license = "Apache-2.0"
+license = {text = "Apache-2.0"}
 authors = [
     {name = "OpenBMB", email = "openbmb@gmail.com"}
 ]
