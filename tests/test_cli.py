@@ -48,6 +48,10 @@ class DummyModel:
         self.calls.append(kwargs)
         return np.zeros(160, dtype=np.float32)
 
+    def generate_long_form(self, **kwargs):
+        self.calls.append({"long_form": True, **kwargs})
+        return np.zeros(160, dtype=np.float32)
+
 
 def run_main(monkeypatch, argv):
     monkeypatch.setattr(sys, "argv", ["voxcpm", *argv])
@@ -196,6 +200,36 @@ def test_design_subcommand_applies_control(monkeypatch, tmp_path):
     assert dummy_model.calls[0]["text"] == "(warm female voice)hello"
     assert dummy_model.calls[0]["prompt_wav_path"] is None
     assert dummy_model.calls[0]["reference_wav_path"] is None
+
+
+def test_design_long_form_routes_control_and_segment_options(monkeypatch, tmp_path):
+    dummy_model = DummyModel()
+    monkeypatch.setattr(cli, "load_model", lambda args: dummy_model)
+    patch_soundfile_write(monkeypatch)
+
+    run_main(
+        monkeypatch,
+        [
+            "design",
+            "--text",
+            "hello",
+            "--control",
+            "warm female voice",
+            "--long-form",
+            "--long-form-max-chars",
+            "12",
+            "--long-form-silence-ms",
+            "250",
+            "--output",
+            str(tmp_path / "out.wav"),
+        ],
+    )
+
+    assert dummy_model.calls[0]["long_form"] is True
+    assert dummy_model.calls[0]["text"] == "hello"
+    assert dummy_model.calls[0]["control"] == "warm female voice"
+    assert dummy_model.calls[0]["max_chars"] == 12
+    assert dummy_model.calls[0]["silence_ms"] == 250
 
 
 def test_clone_subcommand_reads_prompt_file(monkeypatch, tmp_path):

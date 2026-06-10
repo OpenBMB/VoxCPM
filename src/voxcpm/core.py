@@ -11,6 +11,57 @@ from .model.voxcpm2 import VoxCPM2Model
 from .model.utils import next_and_close
 
 
+def _split_long_text_for_tts(text: str, max_chars: int = 90) -> list[str]:
+    """Split long spoken text on natural punctuation while keeping chunks short."""
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("target text must be a non-empty string")
+    if max_chars <= 0:
+        raise ValueError("max_chars must be a positive integer")
+
+    text = text.replace("\n", " ")
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) <= max_chars:
+        return [text]
+
+    pieces = re.findall(r"[^。！？!?；;.]+[。！？!?；;.]?", text)
+    if not pieces:
+        pieces = [text]
+
+    segments = []
+    current = ""
+    for piece in pieces:
+        piece = piece.strip()
+        if not piece:
+            continue
+        subpieces = [piece]
+        if len(piece) > max_chars:
+            subpieces = re.findall(r"[^，,、：:]+[，,、：:]?", piece) or [piece]
+
+        for subpiece in subpieces:
+            subpiece = subpiece.strip()
+            while len(subpiece) > max_chars:
+                if current:
+                    segments.append(current)
+                    current = ""
+                segments.append(subpiece[:max_chars])
+                subpiece = subpiece[max_chars:].strip()
+            if not subpiece:
+                continue
+            if current and len(current) + len(subpiece) > max_chars:
+                segments.append(current)
+                current = subpiece
+            else:
+                current += subpiece
+
+    if current:
+        segments.append(current)
+    return segments or [text]
+
+
+def _as_mono_float32(wav: np.ndarray) -> np.ndarray:
+    return np.asarray(wav, dtype=np.float32).reshape(-1)
+
+
 class VoxCPM:
     def __init__(
         self,
@@ -176,6 +227,109 @@ class VoxCPM:
 
     def generate_streaming(self, *args, **kwargs) -> Generator[np.ndarray, None, None]:
         return self._generate(*args, streaming=True, **kwargs)
+
+    def generate_long_form(
+        self,
+        text: str,
+        control: str = None,
+        prompt_wav_path: str = None,
+        prompt_text: str = None,
+        reference_wav_path: str = None,
+        cfg_value: float = 2.0,
+        inference_timesteps: int = 10,
+        min_len: int = 2,
+        max_len: int = 4096,
+        normalize: bool = False,
+        denoise: bool = False,
+        retry_badcase: bool = True,
+        retry_badcase_max_times: int = 3,
+        retry_badcase_ratio_threshold: float = 6.0,
+        max_chars: int = 55,
+        silence_ms: int = 180,
+    ) -> np.ndarray:
+        """Generate long-form speech as short anchored segments.
+
+        Later segments use the first generated segment as a fixed continuation
+        prompt so long inputs do not rely on one very long autoregressive pass.
+        An explicit external reference, when supplied, is kept as the stable
+        reference voice.
+        """
+        segments = _split_long_text_for_tts(text, max_chars=max_chars)
+        control = (control or "").strip()
+
+        first_text = f"({control}){segments[0]}" if control else segments[0]
+
+        common_kwargs = {
+            "cfg_value": cfg_value,
+            "inference_timesteps": inference_timesteps,
+            "min_len": min_len,
+            "max_len": max_len,
+            "normalize": normalize,
+            "retry_badcase": retry_badcase,
+            "retry_badcase_max_times": retry_badcase_max_times,
+            "retry_badcase_ratio_threshold": retry_badcase_ratio_threshold,
+        }
+
+        if len(segments) == 1:
+            return _as_mono_float32(
+                self.generate(
+                    text=first_text,
+                    prompt_wav_path=prompt_wav_path,
+                    prompt_text=prompt_text,
+                    reference_wav_path=reference_wav_path,
+                    denoise=denoise,
+                    **common_kwargs,
+                )
+            )
+
+        import soundfile as sf
+
+        sample_rate = self.tts_model.sample_rate
+        silence_len = max(0, int(sample_rate * silence_ms / 1000.0))
+        silence = np.zeros(silence_len, dtype=np.float32)
+        outputs = []
+        can_use_reference = isinstance(self.tts_model, VoxCPM2Model)
+
+        with tempfile.TemporaryDirectory(prefix="voxcpm_long_form_") as tmp_dir:
+            def write_segment(name: str, wav: np.ndarray) -> str:
+                path = os.path.join(tmp_dir, name)
+                sf.write(path, _as_mono_float32(wav), sample_rate)
+                return path
+
+            first_wav = _as_mono_float32(
+                self.generate(
+                    text=first_text,
+                    prompt_wav_path=prompt_wav_path,
+                    prompt_text=prompt_text,
+                    reference_wav_path=reference_wav_path,
+                    denoise=denoise,
+                    **common_kwargs,
+                )
+            )
+            outputs.append(first_wav)
+
+            seed_prompt_path = write_segment("segment_001.wav", first_wav)
+            # prompt_text must match the spoken prompt audio. Voice-design control
+            # text guides generation but is not part of the spoken transcript.
+            seed_prompt_text = segments[0]
+
+            for index, segment in enumerate(segments[1:], start=2):
+                wav = _as_mono_float32(
+                    self.generate(
+                        text=segment,
+                        prompt_wav_path=seed_prompt_path,
+                        prompt_text=seed_prompt_text,
+                        reference_wav_path=reference_wav_path if can_use_reference else None,
+                        denoise=False,
+                        **common_kwargs,
+                    )
+                )
+                if silence_len:
+                    outputs.append(silence)
+                outputs.append(wav)
+                write_segment(f"segment_{index:03d}.wav", wav)
+
+        return np.concatenate(outputs).astype(np.float32, copy=False)
 
     def _generate(
         self,

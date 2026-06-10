@@ -200,6 +200,20 @@ sf.write("streaming.wav", wav, model.tts_model.sample_rate)
 ```
 </details>
 
+#### 📖 长文本生成
+
+对于较长文稿，`generate_long_form()` 会将文本切分为较短片段，并使用首段生成结果作为后续片段的稳定 prompt/reference 锚点，从而降低长句一次性自回归生成带来的音色漂移风险。
+
+```python
+wav = model.generate_long_form(
+    text="第一段内容。第二段内容。第三段内容。",
+    control="温暖稳定的旁白男声",
+    max_chars=120,
+    silence_ms=300,
+)
+sf.write("long_form.wav", wav, model.tts_model.sample_rate)
+```
+
 ### 命令行使用
 
 ```bash
@@ -213,6 +227,14 @@ voxcpm design \
   --text "VoxCPM2带来全新语音合成体验。" \
   --control "年轻女声，温暖温柔，略带微笑" \
   --output out.wav
+
+# 长文本音色设计
+voxcpm design \
+  --text "第一段内容。第二段内容。第三段内容。" \
+  --control "温暖稳定的旁白男声" \
+  --long-form \
+  --long-form-max-chars 120 \
+  --output long_form.wav
 
 # 声音克隆（参考音频）
 voxcpm clone \
