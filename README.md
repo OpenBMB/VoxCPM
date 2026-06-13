@@ -63,6 +63,10 @@ Chinese Dialect: 四川话, 粤语, 吴语, 东北话, 河南话, 陕西话, 山
 
 ---
 
+## VoxCPM-Box AppShell
+
+This workspace also tracks **VoxCPM-Box**, a local desktop AppShell layer for ordinary-user dubbing workflows while preserving the upstream VoxCPM source and Gradio development route. See [docs/app-dev](docs/app-dev/README.md) for the app-layer technical documentation and upstream-sync rules.
+
 ## Contents
 
 - [Quick Start](#-quick-start)

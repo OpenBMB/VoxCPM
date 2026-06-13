@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VoxCPM</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        background: #101214;
+        color: #f3f0e8;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background:
+          linear-gradient(135deg, rgba(215, 180, 106, 0.12), transparent 34%),
+          linear-gradient(315deg, rgba(75, 134, 180, 0.16), transparent 38%),
+          #101214;
+      }
+
+      main {
+        width: min(620px, calc(100vw - 48px));
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 42px;
+        line-height: 1;
+        letter-spacing: 0;
+      }
+
+      p {
+        margin: 14px 0 0;
+        color: #bcb9ae;
+        font-size: 15px;
+      }
+
+      .bar {
+        position: relative;
+        height: 6px;
+        margin-top: 34px;
+        overflow: hidden;
+        background: #262a2d;
+      }
+
+      .bar::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 42%;
+        background: #d7b46a;
+        animation: travel 1.15s ease-in-out infinite;
+      }
+
+      .status {
+        min-height: 82px;
+        margin-top: 24px;
+        padding: 16px 18px;
+        background: rgba(255, 255, 255, 0.055);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+
+      .status strong {
+        display: block;
+        font-size: 15px;
+      }
+
+      .status pre {
+        margin: 8px 0 0;
+        white-space: pre-wrap;
+        color: #d8d1c0;
+        font-family: Consolas, monospace;
+        font-size: 12px;
+      }
+
+      @keyframes travel {
+        0% {
+          left: -45%;
+        }
+        100% {
+          left: 105%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>VoxCPM</h1>
+      <p>Starting the local CUDA WebUI service. The interface will appear here when it is ready.</p>
+      <div class="bar" aria-hidden="true"></div>
+      <section class="status">
+        <strong id="message">Preparing backend</strong>
+        <pre id="detail"></pre>
+      </section>
+    </main>
+    <script>
+      const message = document.getElementById("message");
+      const detail = document.getElementById("detail");
+
+      window.voxcpmShell?.onStatus((payload) => {
+        message.textContent = payload.message || "Working";
+        detail.textContent = payload.detail || "";
+      });
+    </script>
+  </body>
+</html>

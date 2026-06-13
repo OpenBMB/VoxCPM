@@ -2,6 +2,9 @@ launch.json
 .venv/
 __pycache__
 voxcpm.egg-info
+node_modules/
+.local-ffmpeg/
+*.log
 .DS_Store
 ./pretrained_models/
 app_local.py
