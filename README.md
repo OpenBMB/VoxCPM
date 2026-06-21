@@ -247,6 +247,20 @@ python app.py --device auto
 
 Supported values are `auto`, `cpu`, `mps`, `cuda`, and `cuda:N`. On Apple Silicon Macs, `auto` uses MPS when available.
 
+### Phone Assistant Bridge
+
+For a mobile-first assistant flow with voice input, webhook-backed replies, and VoxCPM voice cloning:
+
+```bash
+voxcpm-assistant --port 8809
+```
+
+Use a clean reference sample plus an exact transcript for the highest-quality cloned voice. If you connect a webhook, the app POSTs the user message and conversation history and expects a reply in plain text or in a `reply` field.
+If you want phone microphone dictation, install the optional ASR dependency separately with `pip install funasr`.
+You can also save a named voice enrollment once and reuse it later from the app's profile panel.
+By default, the assistant loads the saved `reddit-female` profile if it exists.
+To wire in your PCA backend automatically, set `PCA_BACKEND_URL` plus optional `PCA_BACKEND_TOKEN`, `PCA_ASSISTANT_CONTEXT`, and `PCA_BACKEND_MODE=auto|openai|custom` before launching.
+
 ### 🚢 Production Deployment (Nano-vLLM)
 
 For high-throughput serving, use **[Nano-vLLM-VoxCPM](https://github.com/a710128/nanovllm-voxcpm)** — a dedicated inference engine built on Nano-vLLM with concurrent request support and an async API.

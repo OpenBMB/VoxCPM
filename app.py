@@ -5,8 +5,12 @@ import logging
 import numpy as np
 import gradio as gr
 from typing import Optional, Tuple
-from funasr import AutoModel
 from pathlib import Path
+
+try:
+    from funasr import AutoModel
+except ImportError:  # Optional dependency for ASR-assisted prompt transcription
+    AutoModel = None
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -245,6 +249,10 @@ class VoxCPMDemo:
         return self.voxcpm_model
 
     def get_or_load_asr_model(self) -> AutoModel:
+        if AutoModel is None:
+            raise RuntimeError(
+                "funasr is not installed. Install the optional ASR dependency to enable prompt transcription."
+            )
         if self.asr_model is not None:
             return self.asr_model
         logger.info(
