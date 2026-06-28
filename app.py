@@ -175,6 +175,53 @@ for _d in _I18N_TRANSLATIONS.values():
 
 I18N = gr.I18n(**_I18N_TRANSLATIONS)
 
+# ---------- Runtime toast messages ----------
+# gr.Info / gr.Warning do NOT accept I18nData objects (the LogMessage model
+# requires a plain str), so toast text cannot use I18N(...) like UI labels do.
+# Instead we resolve the language at request time from the Accept-Language
+# header and look the message up here.
+_TOAST_MESSAGES = {
+    "en": {
+        "preset_name_empty": "Preset name cannot be empty.",
+        "save_failed": "Failed to save preset: {error}",
+        "save_overwritten": "Preset name already exists; overwritten.",
+        "save_done": "Preset saved.",
+        "select_preset_first": "Please select a preset first.",
+        "preset_not_exist": "Preset does not exist.",
+        "ref_audio_missing": "Reference audio file is missing; skipped.",
+        "delete_done": "Preset deleted.",
+    },
+    "zh-CN": {
+        "preset_name_empty": "预设名称不能为空。",
+        "save_failed": "保存预设失败：{error}",
+        "save_overwritten": "预设名称已存在，已覆盖。",
+        "save_done": "预设已保存。",
+        "select_preset_first": "请先选择预设。",
+        "preset_not_exist": "预设不存在。",
+        "ref_audio_missing": "参考音频文件缺失，已跳过。",
+        "delete_done": "预设已删除。",
+    },
+}
+
+
+def _detect_lang(request: Optional[gr.Request]) -> str:
+    """Pick a toast language from the request's Accept-Language header.
+
+    Defaults to English; returns "zh-CN" when a Chinese locale is preferred.
+    """
+    if request is None:
+        return "en"
+    accept = (request.headers.get("accept-language") or "").lower()
+    return "zh-CN" if "zh" in accept else "en"
+
+
+def _toast(request: Optional[gr.Request], key: str, **fmt: str) -> str:
+    """Resolve a localized toast message, with optional str.format args."""
+    lang = _detect_lang(request)
+    template = _TOAST_MESSAGES[lang].get(key) or _TOAST_MESSAGES["en"][key]
+    return template.format(**fmt) if fmt else template
+
+
 DEFAULT_TARGET_TEXT = (
     "VoxCPM2 is a creative multilingual TTS model from ModelBest, "
     "designed to generate highly realistic speech."
@@ -443,11 +490,12 @@ def create_demo_interface(demo: VoxCPMDemo):
         do_normalize,
         denoise,
         dit_steps_value,
+        request: gr.Request,
     ):
         """Save the current UI state as a named preset, then refresh the list."""
         name = (name or "").strip()
         if not name:
-            gr.Warning("预设名称不能为空喵～")
+            gr.Warning(_toast(request, "preset_name_empty"))
             return gr.update(), gr.update()
 
         data = _collect_preset_data(
@@ -459,28 +507,31 @@ def create_demo_interface(demo: VoxCPMDemo):
         try:
             preset_store.save_preset(name, data, reference_audio=ref_wav)
         except Exception as e:
-            gr.Warning(f"保存预设失败喵：{e}")
+            gr.Warning(_toast(request, "save_failed", error=str(e)))
             return gr.update(), gr.update()
 
-        gr.Info("预设名称已存在，已覆盖喵～" if existed else "预设已保存喵～", duration=2)
+        gr.Info(
+            _toast(request, "save_overwritten" if existed else "save_done"),
+            duration=2,
+        )
         # Clear the name box and refresh the dropdown with the new preset selected.
         return gr.update(value=""), _refresh_dropdown(safe_name)
 
-    def on_preset_apply(name):
+    def on_preset_apply(name, request: gr.Request):
         """Load a preset and update every relevant component."""
         unchanged = tuple(gr.update() for _ in range(_APPLY_OUTPUT_COUNT))
         if not name:
-            gr.Warning("请先选择预设喵～")
+            gr.Warning(_toast(request, "select_preset_first"))
             return unchanged
 
         data = preset_store.load_preset(name)
         if data is None:
-            gr.Warning("预设不存在喵～")
+            gr.Warning(_toast(request, "preset_not_exist"))
             return unchanged
 
         ref_path = data.get("reference_audio", "") or None
         if ref_path and not os.path.exists(ref_path):
-            gr.Warning("参考音频文件缺失，已跳过喵～")
+            gr.Warning(_toast(request, "ref_audio_missing"))
             ref_path = None
 
         use_prompt = bool(data.get("use_prompt_text", False))
@@ -496,15 +547,15 @@ def create_demo_interface(demo: VoxCPMDemo):
             gr.update(value=data.get("dit_steps", 10)),                         # dit_steps
         )
 
-    def on_preset_delete(name):
+    def on_preset_delete(name, request: gr.Request):
         """Delete the selected preset and refresh the dropdown."""
         if not name:
-            gr.Warning("请先选择预设喵～")
+            gr.Warning(_toast(request, "select_preset_first"))
             return gr.update()
         if preset_store.delete_preset(name):
-            gr.Info("预设已删除喵～", duration=2)
+            gr.Info(_toast(request, "delete_done"), duration=2)
         else:
-            gr.Warning("预设不存在喵～")
+            gr.Warning(_toast(request, "preset_not_exist"))
         return _refresh_dropdown("")
 
     def on_preset_refresh():
