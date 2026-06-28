@@ -13,6 +13,9 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 import voxcpm
 
+import presets as preset_store
+
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
@@ -117,6 +120,15 @@ _I18N_TRANSLATIONS = {
         "dit_steps_info": "LocDiT flow-matching steps — more steps → maybe better audio quality, but slower",
         "usage_instructions": _USAGE_INSTRUCTIONS_EN,
         "examples_footer": _EXAMPLES_FOOTER_EN,
+        # ----- Preset management -----
+        "preset_section_title": "💾 Presets (save & reuse a configuration)",
+        "preset_name_label": "Preset name",
+        "preset_name_placeholder": "e.g. Gentle girl / 暴躁老哥",
+        "save_preset_btn": "💾 Save as preset",
+        "load_preset_label": "Load preset",
+        "apply_preset_btn": "Apply",
+        "delete_preset_btn": "Delete",
+        "refresh_preset_btn": "Refresh",
     },
     "zh-CN": {
         "reference_audio_label": "🎤 参考音频（可选 — 上传后用于克隆）",
@@ -140,6 +152,15 @@ _I18N_TRANSLATIONS = {
         "dit_steps_info": "LocDiT 流匹配生成迭代步数 — 步数越多 → 可能生成更好的音频质量，但速度变慢",
         "usage_instructions": _USAGE_INSTRUCTIONS_ZH,
         "examples_footer": _EXAMPLES_FOOTER_ZH,
+        # ----- 预设管理 -----
+        "preset_section_title": "💾 预设（保存并复用配置）",
+        "preset_name_label": "预设名称",
+        "preset_name_placeholder": "如：温柔少女 / 暴躁老哥",
+        "save_preset_btn": "💾 保存为预设",
+        "load_preset_label": "加载预设",
+        "apply_preset_btn": "应用",
+        "delete_preset_btn": "删除",
+        "refresh_preset_btn": "刷新",
     },
     "zh-Hans": None,  # alias, filled below
     "zh": None,       # alias, filled below
@@ -375,6 +396,121 @@ def create_demo_interface(demo: VoxCPMDemo):
             logger.warning(f"ASR recognition failed: {e}")
             return gr.update(value="")
 
+    # ----- Preset save / load / delete handlers -----
+    # The order below is the single source of truth shared by save inputs and
+    # apply outputs, so the two never drift apart (DRY).
+    #   apply outputs: reference_wav, show_prompt_text, prompt_text,
+    #                  control_instruction, text, cfg_value,
+    #                  DoNormalizeText, DoDenoisePromptAudio, dit_steps
+    _APPLY_OUTPUT_COUNT = 9
+
+    def _collect_preset_data(
+        text_value,
+        control_value,
+        use_prompt_text,
+        prompt_text_value,
+        cfg_value_input,
+        do_normalize,
+        denoise,
+        dit_steps_value,
+    ):
+        """Gather the non-audio UI values into a dict for preset storage."""
+        return {
+            "text": text_value or "",
+            "control_instruction": control_value or "",
+            "use_prompt_text": bool(use_prompt_text),
+            "prompt_text": prompt_text_value or "",
+            "cfg_value": float(cfg_value_input) if cfg_value_input is not None else 2.0,
+            "do_normalize": bool(do_normalize),
+            "denoise": bool(denoise),
+            "dit_steps": int(dit_steps_value) if dit_steps_value is not None else 10,
+        }
+
+    def _refresh_dropdown(selected: str = ""):
+        """Return a dropdown update reflecting the presets currently on disk."""
+        choices = preset_store.list_presets()
+        value = selected if selected in choices else ""
+        return gr.update(choices=choices, value=value, interactive=bool(choices))
+
+    def on_preset_save(
+        name,
+        ref_wav,
+        text_value,
+        control_value,
+        use_prompt_text,
+        prompt_text_value,
+        cfg_value_input,
+        do_normalize,
+        denoise,
+        dit_steps_value,
+    ):
+        """Save the current UI state as a named preset, then refresh the list."""
+        name = (name or "").strip()
+        if not name:
+            gr.Warning("预设名称不能为空喵～")
+            return gr.update(), gr.update()
+
+        data = _collect_preset_data(
+            text_value, control_value, use_prompt_text, prompt_text_value,
+            cfg_value_input, do_normalize, denoise, dit_steps_value,
+        )
+        safe_name = preset_store.safe_preset_name(name)
+        existed = safe_name in preset_store.list_presets()
+        try:
+            preset_store.save_preset(name, data, reference_audio=ref_wav)
+        except Exception as e:
+            gr.Warning(f"保存预设失败喵：{e}")
+            return gr.update(), gr.update()
+
+        gr.Info("预设名称已存在，已覆盖喵～" if existed else "预设已保存喵～", duration=2)
+        # Clear the name box and refresh the dropdown with the new preset selected.
+        return gr.update(value=""), _refresh_dropdown(safe_name)
+
+    def on_preset_apply(name):
+        """Load a preset and update every relevant component."""
+        unchanged = tuple(gr.update() for _ in range(_APPLY_OUTPUT_COUNT))
+        if not name:
+            gr.Warning("请先选择预设喵～")
+            return unchanged
+
+        data = preset_store.load_preset(name)
+        if data is None:
+            gr.Warning("预设不存在喵～")
+            return unchanged
+
+        ref_path = data.get("reference_audio", "") or None
+        if ref_path and not os.path.exists(ref_path):
+            gr.Warning("参考音频文件缺失，已跳过喵～")
+            ref_path = None
+
+        use_prompt = bool(data.get("use_prompt_text", False))
+        return (
+            gr.update(value=ref_path),                                          # reference_wav
+            gr.update(value=use_prompt),                                        # show_prompt_text
+            gr.update(value=data.get("prompt_text", ""), visible=use_prompt),   # prompt_text
+            gr.update(value=data.get("control_instruction", ""), visible=not use_prompt),  # control_instruction
+            gr.update(value=data.get("text", "")),                              # text
+            gr.update(value=data.get("cfg_value", 2.0)),                        # cfg_value
+            gr.update(value=data.get("do_normalize", False)),                   # DoNormalizeText
+            gr.update(value=data.get("denoise", False)),                        # DoDenoisePromptAudio
+            gr.update(value=data.get("dit_steps", 10)),                         # dit_steps
+        )
+
+    def on_preset_delete(name):
+        """Delete the selected preset and refresh the dropdown."""
+        if not name:
+            gr.Warning("请先选择预设喵～")
+            return gr.update()
+        if preset_store.delete_preset(name):
+            gr.Info("预设已删除喵～", duration=2)
+        else:
+            gr.Warning("预设不存在喵～")
+        return _refresh_dropdown("")
+
+    def on_preset_refresh():
+        """Re-list presets from disk."""
+        return _refresh_dropdown("")
+
     with gr.Blocks() as interface:
         gr.HTML(
             '<div class="logo-container">'
@@ -448,6 +584,29 @@ def create_demo_interface(demo: VoxCPMDemo):
 
                 run_btn = gr.Button(I18N("generate_btn"), variant="primary", size="lg")
 
+                with gr.Accordion(I18N("preset_section_title"), open=False):
+                    with gr.Row():
+                        preset_name = gr.Textbox(
+                            label=I18N("preset_name_label"),
+                            placeholder=I18N("preset_name_placeholder"),
+                            scale=3,
+                        )
+                        save_preset_btn = gr.Button(
+                            I18N("save_preset_btn"), scale=1
+                        )
+                    with gr.Row():
+                        load_preset_dropdown = gr.Dropdown(
+                            choices=preset_store.list_presets(),
+                            value="",
+                            label=I18N("load_preset_label"),
+                            allow_custom_value=False,
+                            interactive=bool(preset_store.list_presets()),
+                            scale=3,
+                        )
+                        apply_preset_btn = gr.Button(I18N("apply_preset_btn"), scale=1)
+                        delete_preset_btn = gr.Button(I18N("delete_preset_btn"), scale=1)
+                        refresh_preset_btn = gr.Button(I18N("refresh_preset_btn"), scale=1)
+
             with gr.Column():
                 audio_output = gr.Audio(label=I18N("generated_audio_label"))
                 gr.Markdown(I18N("examples_footer"))
@@ -478,6 +637,59 @@ def create_demo_interface(demo: VoxCPMDemo):
             outputs=[audio_output],
             show_progress=True,
             api_name="generate",
+        )
+
+        # ----- Preset event bindings -----
+        # Must match the order documented in on_preset_apply / _APPLY_OUTPUT_COUNT.
+        _preset_apply_outputs = [
+            reference_wav,
+            show_prompt_text,
+            prompt_text,
+            control_instruction,
+            text,
+            cfg_value,
+            DoNormalizeText,
+            DoDenoisePromptAudio,
+            dit_steps,
+        ]
+        _preset_save_inputs = [
+            preset_name,
+            reference_wav,
+            text,
+            control_instruction,
+            show_prompt_text,
+            prompt_text,
+            cfg_value,
+            DoNormalizeText,
+            DoDenoisePromptAudio,
+            dit_steps,
+        ]
+
+        save_preset_btn.click(
+            fn=on_preset_save,
+            inputs=_preset_save_inputs,
+            outputs=[preset_name, load_preset_dropdown],
+        )
+        apply_preset_btn.click(
+            fn=on_preset_apply,
+            inputs=[load_preset_dropdown],
+            outputs=_preset_apply_outputs,
+        )
+        delete_preset_btn.click(
+            fn=on_preset_delete,
+            inputs=[load_preset_dropdown],
+            outputs=[load_preset_dropdown],
+        )
+        refresh_preset_btn.click(
+            fn=on_preset_refresh,
+            inputs=[],
+            outputs=[load_preset_dropdown],
+        )
+        # Refresh the preset list whenever the page (re)loads.
+        interface.load(
+            fn=on_preset_refresh,
+            inputs=[],
+            outputs=[load_preset_dropdown],
         )
 
     return interface
