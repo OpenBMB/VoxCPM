@@ -230,7 +230,16 @@ class VoxCPMDemo:
         logger.info(f"Running VoxCPM on device: {self.device}")
         self.optimize = self.device.startswith("cuda")
 
-        self.asr_model_id = "iic/SenseVoiceSmall"
+        project_root = Path(__file__).parent
+        local_asr_model = project_root / "models" / "iic__SenseVoiceSmall"
+        local_zipenhancer_model = project_root / "models" / "iic__speech_zipenhancer_ans_multiloss_16k_base"
+
+        self.asr_model_id = str(local_asr_model) if local_asr_model.exists() else "iic/SenseVoiceSmall"
+        self.zipenhancer_model_id = (
+            str(local_zipenhancer_model)
+            if local_zipenhancer_model.exists()
+            else "iic/speech_zipenhancer_ans_multiloss_16k_base"
+        )
         self.asr_device = "cuda:0" if self.device.startswith("cuda") else "cpu"
         self.asr_model: Optional[AutoModel] = None
 
@@ -243,6 +252,7 @@ class VoxCPMDemo:
         logger.info(f"Loading model: {self._model_id}")
         self.voxcpm_model = voxcpm.VoxCPM.from_pretrained(
             self._model_id,
+            zipenhancer_model_id=self.zipenhancer_model_id,
             optimize=self.optimize,
             device=self.device,
         )
