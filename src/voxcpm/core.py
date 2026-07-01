@@ -4,7 +4,7 @@ import re
 import json
 import tempfile
 import numpy as np
-from typing import Generator, Optional
+from typing import Callable, Generator, Optional
 from huggingface_hub import snapshot_download
 from .model.voxcpm import VoxCPMModel, LoRAConfig
 from .model.voxcpm2 import VoxCPM2Model
@@ -206,6 +206,7 @@ class VoxCPM:
         retry_badcase_ratio_threshold: float = 6.0,
         streaming: bool = False,
         seed: Optional[int] = None,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> Generator[np.ndarray, None, None]:
         """Synthesize speech for the given text and return a single waveform.
 
@@ -308,6 +309,7 @@ class VoxCPM:
                 retry_badcase_ratio_threshold=retry_badcase_ratio_threshold,
                 streaming=streaming,
                 seed=seed,
+                progress_callback=progress_callback,
             )
 
             if streaming:

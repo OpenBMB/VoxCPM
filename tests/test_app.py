@@ -65,7 +65,7 @@ def test_resolve_generation_inputs_auto_transcribes_blank_ultimate_prompt():
     class FakeDemo:
         calls = []
 
-        def prompt_wav_recognition(self, path):
+        def prompt_wav_recognition(self, path, progress_callback=None):
             self.calls.append(path)
             return " auto transcript "
 
@@ -119,6 +119,53 @@ def test_sensevoice_asr_backend_disables_local_parakeet():
     assert demo._should_use_parakeet_asr() is False
 
 
+def test_preload_models_uses_parakeet_on_cuda():
+    class FakeCoreModel:
+        def _get_or_load_denoiser(self):
+            calls.append("denoiser")
+
+    calls = []
+    demo = app.VoxCPMDemo.__new__(app.VoxCPMDemo)
+    demo.asr_backend = "auto"
+    demo.device = "cuda"
+    demo.parakeet_model_id = "models/nvidia__parakeet-tdt-0.6b-v3"
+    demo.get_or_load_voxcpm = lambda: calls.append("tts") or FakeCoreModel()
+    demo.get_or_load_parakeet_asr_model = lambda: calls.append("parakeet")
+    demo.get_or_load_asr_model = lambda: calls.append("sensevoice")
+
+    demo.preload_models()
+
+    assert calls == ["tts", "parakeet"]
+
+
+def test_prompt_wav_recognition_reports_progress_and_uses_parakeet(monkeypatch):
+    progress_events = []
+    calls = []
+    demo = app.VoxCPMDemo.__new__(app.VoxCPMDemo)
+    demo.asr_backend = "auto"
+    demo.device = "cuda"
+    demo.parakeet_model_id = "models/nvidia__parakeet-tdt-0.6b-v3"
+
+    monkeypatch.setattr(app, "_prepare_asr_audio", lambda path: ("prepared.wav", None))
+
+    def fake_parakeet(path, progress_callback=None):
+        calls.append(("parakeet", path))
+        app._emit_progress(progress_callback, 0.55, "Transcribing reference audio with Parakeet, 55%")
+        return "transcript"
+
+    demo._recognize_with_parakeet = fake_parakeet
+    demo._recognize_with_sensevoice = lambda path, progress_callback=None: calls.append(("sensevoice", path)) or ""
+
+    text = demo.prompt_wav_recognition(
+        "ref.wav", progress_callback=lambda value, label: progress_events.append((value, label))
+    )
+
+    assert text == "transcript"
+    assert calls == [("parakeet", "prepared.wav")]
+    assert progress_events[0][0] == 0.05
+    assert "Parakeet" in progress_events[-1][1]
+
+
 def test_generate_tts_audio_normalizes_gradio_filedata_path():
     class FakeTTS:
         sample_rate = 24000
@@ -138,6 +185,8 @@ def test_generate_tts_audio_normalizes_gradio_filedata_path():
     demo = app.VoxCPMDemo.__new__(app.VoxCPMDemo)
     demo.get_or_load_voxcpm = lambda: fake_model
 
+    progress_callback = lambda step, total: None
+
     sr, wav, seed = app.VoxCPMDemo.generate_tts_audio(
         demo,
         text_input="Hello",
@@ -146,6 +195,7 @@ def test_generate_tts_audio_normalizes_gradio_filedata_path():
         do_normalize=False,
         denoise=False,
         seed=123,
+        progress_callback=progress_callback,
     )
 
     assert sr == 24000
@@ -154,3 +204,4 @@ def test_generate_tts_audio_normalizes_gradio_filedata_path():
     assert fake_model.kwargs["reference_wav_path"] == "ref.wav"
     assert fake_model.kwargs["prompt_wav_path"] == "ref.wav"
     assert fake_model.kwargs["prompt_text"] == "reference transcript"
+    assert fake_model.kwargs["progress_callback"] is progress_callback

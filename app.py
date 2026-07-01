@@ -6,7 +6,7 @@ import random
 import tempfile
 import numpy as np
 import gradio as gr
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
 from funasr import AutoModel
 from pathlib import Path
 
@@ -179,6 +179,8 @@ DEFAULT_TARGET_TEXT = (
 ASR_BACKENDS = {"auto", "sensevoice", "parakeet"}
 PARAKEET_ASR_MODEL_ID = "nvidia/parakeet-tdt-0.6b-v3"
 PARAKEET_LOCAL_MODEL_DIRNAME = PARAKEET_ASR_MODEL_ID.replace("/", "__")
+ProgressCallback = Optional[Callable[[float, str], None]]
+GenerationProgressCallback = Optional[Callable[[int, int], None]]
 
 _CUSTOM_CSS = """
 .logo-container {
@@ -304,12 +306,19 @@ def _normalize_asr_backend(asr_backend: str) -> str:
     return backend
 
 
+def _emit_progress(callback: ProgressCallback, fraction: float, message: str) -> None:
+    if callback is None:
+        return
+    callback(max(0.0, min(1.0, fraction)), message)
+
+
 def _resolve_generation_inputs(
     demo,
     ref_wav,
     use_prompt_text: bool,
     prompt_text_value: str,
     control_instruction: str,
+    progress_callback: ProgressCallback = None,
 ) -> Tuple[Optional[str], str, str]:
     audio_path = _coerce_audio_filepath(ref_wav)
     actual_prompt_text = (prompt_text_value or "").strip() if use_prompt_text else ""
@@ -318,7 +327,7 @@ def _resolve_generation_inputs(
             raise gr.Error("Upload reference audio before using Ultimate Cloning Mode.")
         if not actual_prompt_text:
             logger.info("Auto-transcribing reference audio before generation...")
-            actual_prompt_text = demo.prompt_wav_recognition(audio_path).strip()
+            actual_prompt_text = demo.prompt_wav_recognition(audio_path, progress_callback=progress_callback).strip()
         if not actual_prompt_text:
             raise gr.Error(
                 "Auto-transcription returned no text. Enter the reference transcript or disable Ultimate Cloning Mode."
@@ -354,6 +363,37 @@ class VoxCPMDemo:
 
         self.voxcpm_model: Optional[voxcpm.VoxCPM] = None
         self._model_id = model_id
+
+    def asr_status_text(self) -> str:
+        backend = self._resolved_asr_backend_name()
+        if backend == "parakeet":
+            model_name = "NVIDIA Parakeet TDT 0.6B v3"
+            model_path = self.parakeet_model_id or "not installed"
+            device = "cuda" if self.device.startswith("cuda") else "cpu"
+        else:
+            model_name = "SenseVoiceSmall"
+            model_path = self.asr_model_id
+            device = self.asr_device
+        return f"ASR: {model_name} | language: auto-detect | device: {device} | model: {model_path}"
+
+    def preload_models(
+        self, *, preload_asr: bool = True, preload_tts: bool = True, preload_denoiser: bool = False
+    ) -> None:
+        logger.info("Preloading models before launching the web UI...")
+        if preload_tts:
+            logger.info("Preloading VoxCPM TTS model...")
+            current_model = self.get_or_load_voxcpm()
+            if preload_denoiser:
+                logger.info("Preloading ZipEnhancer denoiser...")
+                current_model._get_or_load_denoiser()
+        if preload_asr:
+            if self._should_use_parakeet_asr():
+                logger.info("Preloading Parakeet ASR model (language=auto-detect)...")
+                self.get_or_load_parakeet_asr_model()
+            else:
+                logger.info("Preloading SenseVoice ASR model (language=auto)...")
+                self.get_or_load_asr_model()
+        logger.info("Preload complete. Launching web UI.")
 
     def get_or_load_voxcpm(self) -> voxcpm.VoxCPM:
         if self.voxcpm_model is not None:
@@ -422,44 +462,54 @@ class VoxCPMDemo:
         logger.info("Parakeet ASR model loaded successfully.")
         return self.parakeet_processor, self.parakeet_model
 
-    def _recognize_with_sensevoice(self, asr_audio_path: str) -> str:
+    def _recognize_with_sensevoice(self, asr_audio_path: str, progress_callback: ProgressCallback = None) -> str:
+        _emit_progress(progress_callback, 0.45, "Transcribing reference audio with SenseVoice, language auto, 45%")
+        logger.info("Running SenseVoice ASR with language=auto on device: %s", self.asr_device)
         res = self.get_or_load_asr_model().generate(
             input=asr_audio_path,
             language="auto",
             use_itn=True,
         )
+        _emit_progress(progress_callback, 0.95, "Transcribing reference audio, 95%")
         return _extract_asr_text(res)
 
-    def _recognize_with_parakeet(self, asr_audio_path: str) -> str:
+    def _recognize_with_parakeet(self, asr_audio_path: str, progress_callback: ProgressCallback = None) -> str:
         import librosa
         import torch
 
+        _emit_progress(progress_callback, 0.25, "Loading Parakeet ASR, language auto-detect, 25%")
         processor, model = self.get_or_load_parakeet_asr_model()
         sample_rate = getattr(processor.feature_extractor, "sampling_rate", 16000)
+        _emit_progress(progress_callback, 0.40, "Preparing Parakeet audio features, 40%")
         audio, _ = librosa.load(asr_audio_path, sr=sample_rate, mono=True)
         if audio.size == 0:
             return ""
         inputs = processor([audio], sampling_rate=sample_rate)
         inputs.to(model.device, dtype=model.dtype)
+        logger.info("Running Parakeet ASR with language=auto-detect on device: %s", model.device)
+        _emit_progress(progress_callback, 0.55, "Transcribing reference audio with Parakeet, 55%")
         with torch.inference_mode():
             output = model.generate(**inputs, return_dict_in_generate=True)
         sequences = getattr(output, "sequences", output)
+        _emit_progress(progress_callback, 0.95, "Transcribing reference audio, 95%")
         return _extract_parakeet_asr_text(processor.decode(sequences, skip_special_tokens=True))
 
-    def prompt_wav_recognition(self, prompt_wav: Optional[str]) -> str:
+    def prompt_wav_recognition(self, prompt_wav: Optional[str], progress_callback: ProgressCallback = None) -> str:
         prompt_wav_path = _coerce_audio_filepath(prompt_wav)
         if prompt_wav_path is None:
             return ""
+        _emit_progress(progress_callback, 0.05, "Transcribing reference audio, 5%")
         asr_audio_path, temp_path = _prepare_asr_audio(prompt_wav_path)
+        _emit_progress(progress_callback, 0.15, "Prepared 16 kHz mono ASR audio, 15%")
         try:
             if self._should_use_parakeet_asr():
                 try:
-                    return self._recognize_with_parakeet(asr_audio_path)
+                    return self._recognize_with_parakeet(asr_audio_path, progress_callback)
                 except Exception:
                     if self.asr_backend == "parakeet":
                         raise
                     logger.warning("Parakeet ASR failed; falling back to SenseVoice.", exc_info=True)
-            return self._recognize_with_sensevoice(asr_audio_path)
+            return self._recognize_with_sensevoice(asr_audio_path, progress_callback)
         finally:
             if temp_path and os.path.exists(temp_path):
                 try:
@@ -478,6 +528,7 @@ class VoxCPMDemo:
         denoise: bool,
         inference_timesteps: int = 10,
         seed: Optional[int] = None,
+        progress_callback: GenerationProgressCallback = None,
     ) -> dict:
         generate_kwargs = dict(
             text=final_text,
@@ -488,6 +539,8 @@ class VoxCPMDemo:
             denoise=denoise,
             seed=seed,
         )
+        if progress_callback is not None:
+            generate_kwargs["progress_callback"] = progress_callback
         if prompt_text_clean and audio_path:
             generate_kwargs["prompt_wav_path"] = audio_path
             generate_kwargs["prompt_text"] = prompt_text_clean
@@ -504,6 +557,7 @@ class VoxCPMDemo:
         denoise: bool = True,
         inference_timesteps: int = 10,
         seed: Optional[int] = None,
+        progress_callback: GenerationProgressCallback = None,
     ) -> Tuple[int, np.ndarray, Optional[int]]:
         current_model = self.get_or_load_voxcpm()
 
@@ -537,6 +591,7 @@ class VoxCPMDemo:
             denoise=denoise,
             inference_timesteps=inference_timesteps,
             seed=seed,
+            progress_callback=progress_callback,
         )
         wav = current_model.generate(**generate_kwargs)
         last_successful_seed = getattr(current_model.tts_model, "last_successful_seed", seed)
@@ -562,6 +617,9 @@ def create_demo_interface(demo: VoxCPMDemo):
     def _on_random_seed_toggle(checked):
         return gr.update(interactive=not checked)
 
+    def _gradio_progress_callback(progress):
+        return lambda fraction, message: progress(fraction, desc=message)
+
     def _generate(
         text: str,
         control_instruction: str,
@@ -573,15 +631,32 @@ def create_demo_interface(demo: VoxCPMDemo):
         denoise: bool,
         dit_steps: int,
         seed_value,
+        progress=gr.Progress(track_tqdm=True),
     ):
+        progress(0.02, desc="Preparing generation, 2%")
+
+        def asr_progress(fraction: float, message: str) -> None:
+            mapped = 0.03 + (0.24 * max(0.0, min(1.0, fraction)))
+            progress(mapped, desc=f"{message} / preparing generation, {int(mapped * 100)}%")
+
         audio_path, actual_prompt_text, actual_control = _resolve_generation_inputs(
             demo,
             ref_wav,
             use_prompt_text,
             prompt_text_value,
             control_instruction,
+            progress_callback=asr_progress,
         )
         seed = _coerce_seed(seed_value)
+
+        def tts_progress(step: int, total: int) -> None:
+            if total <= 0:
+                return
+            fraction = min(1.0, max(0.0, (step + 1) / total))
+            mapped = 0.35 + (0.55 * fraction)
+            progress(mapped, desc=f"Synthesising speech, {int(mapped * 100)}%")
+
+        progress(0.30, desc="Preparing voice prompt, 30%")
         sr, wav_np, last_successful_seed = demo.generate_tts_audio(
             text_input=text,
             control_instruction=actual_control,
@@ -592,7 +667,10 @@ def create_demo_interface(demo: VoxCPMDemo):
             denoise=denoise,
             inference_timesteps=int(dit_steps),
             seed=seed,
+            progress_callback=tts_progress,
         )
+        progress(0.95, desc="Finalising audio, 95%")
+        progress(1.0, desc="Complete, 100%")
         return (sr, wav_np), last_successful_seed, actual_prompt_text if use_prompt_text else gr.update()
 
     def _on_toggle_instant(checked, current_prompt_text, audio_path):
@@ -622,37 +700,47 @@ def create_demo_interface(demo: VoxCPMDemo):
             placeholder="Recognizing reference audio...",
         )
 
-    def _run_asr_if_needed(checked, audio_path):
+    def _run_asr_if_needed(checked, audio_path, progress=gr.Progress(track_tqdm=True)):
         """Run ASR after the UI has updated. Only when toggled ON."""
         audio_file = _coerce_audio_filepath(audio_path)
         if not checked or not audio_file:
             return gr.update()
         try:
-            logger.info("Running ASR on reference audio...")
-            asr_text = demo.prompt_wav_recognition(audio_file)
+            logger.info("Running ASR on reference audio using %s...", demo.asr_status_text())
+            asr_text = demo.prompt_wav_recognition(
+                audio_file,
+                progress_callback=_gradio_progress_callback(progress),
+            )
             logger.info("ASR result: %r", asr_text[:60])
             if not asr_text:
+                progress(1.0, desc="Transcribing reference audio complete, 100%")
                 return gr.update(
                     value="",
                     placeholder="No speech was recognized. Enter the reference transcript manually.",
                 )
+            progress(1.0, desc="Transcribing reference audio complete, 100%")
             return gr.update(value=asr_text, placeholder=I18N("prompt_text_placeholder"))
         except Exception as e:
             logger.warning("ASR recognition failed: %s", e, exc_info=True)
             return gr.update(value="", placeholder=f"ASR failed: {e}")
 
-    def _ensure_prompt_text_before_generate(ref_wav, use_prompt_text, prompt_text_value):
+    def _ensure_prompt_text_before_generate(
+        ref_wav, use_prompt_text, prompt_text_value, progress=gr.Progress(track_tqdm=True)
+    ):
         if not use_prompt_text:
             return gr.update()
+        progress(0.02, desc="Preparing reference transcript, 2%")
         audio_path, actual_prompt_text, _ = _resolve_generation_inputs(
             demo,
             ref_wav,
             True,
             prompt_text_value,
             "",
+            progress_callback=_gradio_progress_callback(progress),
         )
         if not audio_path:
             raise gr.Error("Upload reference audio before using Ultimate Cloning Mode.")
+        progress(1.0, desc="Reference transcript ready, 100%")
         return gr.update(value=actual_prompt_text, placeholder=I18N("prompt_text_placeholder"))
 
     with gr.Blocks(theme=_APP_THEME, css=_CUSTOM_CSS) as interface:
@@ -677,6 +765,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                     info=I18N("show_prompt_text_info"),
                     elem_classes=["switch-toggle"],
                 )
+                gr.Markdown(demo.asr_status_text())
                 prompt_text = gr.Textbox(
                     value="",
                     label=I18N("prompt_text_label"),
@@ -810,8 +899,12 @@ def run_demo(
     model_id: str = "openbmb/VoxCPM2",
     device: str = "auto",
     asr_backend: str = "auto",
+    preload: bool = True,
+    preload_denoiser: bool = False,
 ):
     demo = VoxCPMDemo(model_id=model_id, device=device, asr_backend=asr_backend)
+    if preload:
+        demo.preload_models(preload_asr=True, preload_tts=True, preload_denoiser=preload_denoiser)
     interface = create_demo_interface(demo)
     interface.queue(max_size=10, default_concurrency_limit=1).launch(
         server_name=server_name,
@@ -846,5 +939,22 @@ if __name__ == "__main__":
         choices=sorted(ASR_BACKENDS),
         help="Reference audio transcription backend: auto, sensevoice, or parakeet (default: auto)",
     )
+    parser.add_argument(
+        "--no-preload",
+        action="store_true",
+        help="Launch the web UI before loading TTS/ASR models.",
+    )
+    parser.add_argument(
+        "--preload-denoiser",
+        action="store_true",
+        help="Also load ZipEnhancer before launching the web UI.",
+    )
     args = parser.parse_args()
-    run_demo(model_id=args.model_id, server_port=args.port, device=args.device, asr_backend=args.asr_backend)
+    run_demo(
+        model_id=args.model_id,
+        server_port=args.port,
+        device=args.device,
+        asr_backend=args.asr_backend,
+        preload=not args.no_preload,
+        preload_denoiser=args.preload_denoiser,
+    )

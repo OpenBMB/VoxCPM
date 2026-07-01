@@ -20,7 +20,7 @@ limitations under the License.
 
 import os
 import sys
-from typing import Tuple, Union, Generator, List, Optional
+from typing import Callable, Tuple, Union, Generator, List, Optional
 
 import torch
 import torch.nn as nn
@@ -482,6 +482,7 @@ class VoxCPM2Model(nn.Module):
         streaming: bool = False,
         streaming_prefix_len: int = 4,
         seed: Optional[int] = None,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> Generator[torch.Tensor, None, None]:
         if retry_badcase and streaming:
             warnings.warn("Retry on bad cases is not supported in streaming mode, setting retry_badcase=False.")
@@ -656,6 +657,7 @@ class VoxCPM2Model(nn.Module):
                 cfg_value=cfg_value,
                 streaming=streaming,
                 streaming_prefix_len=streaming_prefix_len,
+                progress_callback=progress_callback,
             )
             if streaming:
                 with self.audio_vae.streaming_decode() as vae_dec:
@@ -808,6 +810,7 @@ class VoxCPM2Model(nn.Module):
         streaming: bool = False,
         streaming_prefix_len: int = 4,
         seed: Optional[int] = None,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> Generator[Tuple[torch.Tensor, torch.Tensor, Union[torch.Tensor, List[torch.Tensor]]], None, None]:
         """
         Generate audio using pre-built prompt cache.
@@ -952,6 +955,7 @@ class VoxCPM2Model(nn.Module):
                 cfg_value=cfg_value,
                 streaming=streaming,
                 streaming_prefix_len=streaming_prefix_len,
+                progress_callback=progress_callback,
             )
             if streaming:
                 with self.audio_vae.streaming_decode() as vae_dec:
@@ -1007,6 +1011,7 @@ class VoxCPM2Model(nn.Module):
         cfg_value: float = 2.0,
         streaming: bool = False,
         streaming_prefix_len: int = 4,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> Generator[Tuple[torch.Tensor, Union[torch.Tensor, List[torch.Tensor]]], None, None]:
         """Core inference method for audio generation.
 
@@ -1081,6 +1086,8 @@ class VoxCPM2Model(nn.Module):
         residual_hidden = residual_enc_outputs[:, -1, :]
 
         for i in tqdm(range(max_len)):
+            if progress_callback is not None:
+                progress_callback(i, max_len)
             dit_hidden_1 = self.lm_to_dit_proj(lm_hidden)  # [b, h_dit]
             dit_hidden_2 = self.res_to_dit_proj(residual_hidden)  # [b, h_dit]
             dit_hidden = torch.cat((dit_hidden_1, dit_hidden_2), dim=-1)
