@@ -19,6 +19,13 @@ if SRC_DIR.exists() and str(SRC_DIR) not in sys.path:
 import voxcpm
 from voxcpm.model.utils import resolve_runtime_device
 
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
@@ -229,6 +236,51 @@ _APP_THEME = gr.themes.Soft(
 # ---------- Model ----------
 
 
+def _coerce_audio_filepath(audio_input) -> Optional[str]:
+    if audio_input is None or audio_input == "":
+        return None
+    if isinstance(audio_input, (str, os.PathLike)):
+        return os.fspath(audio_input)
+    if isinstance(audio_input, dict):
+        path = audio_input.get("path")
+        return os.fspath(path) if path else None
+    path = getattr(audio_input, "path", None)
+    if path:
+        return os.fspath(path)
+    return str(audio_input)
+
+
+def _extract_asr_text(result) -> str:
+    if not result:
+        return ""
+    first = result[0] if isinstance(result, list) else result
+    raw_text = first.get("text", "") if isinstance(first, dict) else str(first)
+    return re.sub(r"<\|.*?\|>", "", raw_text).strip()
+
+
+def _resolve_generation_inputs(
+    demo,
+    ref_wav,
+    use_prompt_text: bool,
+    prompt_text_value: str,
+    control_instruction: str,
+) -> Tuple[Optional[str], str, str]:
+    audio_path = _coerce_audio_filepath(ref_wav)
+    actual_prompt_text = (prompt_text_value or "").strip() if use_prompt_text else ""
+    if use_prompt_text:
+        if not audio_path:
+            raise gr.Error("Upload reference audio before using Ultimate Cloning Mode.")
+        if not actual_prompt_text:
+            logger.info("Auto-transcribing reference audio before generation...")
+            actual_prompt_text = demo.prompt_wav_recognition(audio_path).strip()
+        if not actual_prompt_text:
+            raise gr.Error(
+                "Auto-transcription returned no text. Enter the reference transcript or disable Ultimate Cloning Mode."
+            )
+        return audio_path, actual_prompt_text, ""
+    return audio_path, "", control_instruction
+
+
 class VoxCPMDemo:
     def __init__(self, model_id: str = "openbmb/VoxCPM2", device: str = "auto") -> None:
         self.device = resolve_runtime_device(device, "cuda")
@@ -278,14 +330,15 @@ class VoxCPMDemo:
         return self.asr_model
 
     def prompt_wav_recognition(self, prompt_wav: Optional[str]) -> str:
-        if prompt_wav is None:
+        prompt_wav_path = _coerce_audio_filepath(prompt_wav)
+        if prompt_wav_path is None:
             return ""
         res = self.get_or_load_asr_model().generate(
-            input=prompt_wav,
+            input=prompt_wav_path,
             language="auto",
             use_itn=True,
         )
-        return res[0]["text"].split("|>")[-1]
+        return _extract_asr_text(res)
 
     def _build_generate_kwargs(
         self,
@@ -337,7 +390,7 @@ class VoxCPMDemo:
         control = re.sub(r"[()（）]", "", control).strip()
         final_text = f"({control}){text}" if control else text
 
-        audio_path = reference_wav_path_input if reference_wav_path_input else None
+        audio_path = _coerce_audio_filepath(reference_wav_path_input)
         prompt_text_clean = (prompt_text or "").strip() or None
 
         if audio_path and prompt_text_clean:
@@ -394,13 +447,18 @@ def create_demo_interface(demo: VoxCPMDemo):
         dit_steps: int,
         seed_value,
     ):
-        actual_prompt_text = prompt_text_value.strip() if use_prompt_text else ""
-        actual_control = "" if use_prompt_text else control_instruction
+        audio_path, actual_prompt_text, actual_control = _resolve_generation_inputs(
+            demo,
+            ref_wav,
+            use_prompt_text,
+            prompt_text_value,
+            control_instruction,
+        )
         seed = _coerce_seed(seed_value)
         sr, wav_np, last_successful_seed = demo.generate_tts_audio(
             text_input=text,
             control_instruction=actual_control,
-            reference_wav_path_input=ref_wav,
+            reference_wav_path_input=audio_path,
             prompt_text=actual_prompt_text,
             cfg_value_input=cfg_value,
             do_normalize=do_normalize,
@@ -408,7 +466,7 @@ def create_demo_interface(demo: VoxCPMDemo):
             inference_timesteps=int(dit_steps),
             seed=seed,
         )
-        return (sr, wav_np), last_successful_seed
+        return (sr, wav_np), last_successful_seed, actual_prompt_text if use_prompt_text else gr.update()
 
     def _on_toggle_instant(checked):
         """Instant UI toggle — no ASR, no blocking."""
@@ -424,12 +482,13 @@ def create_demo_interface(demo: VoxCPMDemo):
 
     def _run_asr_if_needed(checked, audio_path):
         """Run ASR after the UI has updated. Only when toggled ON."""
-        if not checked or not audio_path:
+        audio_file = _coerce_audio_filepath(audio_path)
+        if not checked or not audio_file:
             return gr.update()
         try:
             logger.info("Running ASR on reference audio...")
-            asr_text = demo.prompt_wav_recognition(audio_path)
-            logger.info(f"ASR result: {asr_text[:60]}...")
+            asr_text = demo.prompt_wav_recognition(audio_file)
+            logger.info("ASR result: %r", asr_text[:60])
             return gr.update(value=asr_text)
         except Exception as e:
             logger.warning(f"ASR recognition failed: {e}")
@@ -536,6 +595,12 @@ def create_demo_interface(demo: VoxCPMDemo):
             outputs=[prompt_text],
         )
 
+        reference_wav.change(
+            fn=_run_asr_if_needed,
+            inputs=[show_prompt_text, reference_wav],
+            outputs=[prompt_text],
+        )
+
         random_seed.change(
             fn=_on_random_seed_toggle,
             inputs=[random_seed],
@@ -561,7 +626,7 @@ def create_demo_interface(demo: VoxCPMDemo):
                 dit_steps,
                 seed_value,
             ],
-            outputs=[audio_output, seed_value],
+            outputs=[audio_output, seed_value, prompt_text],
             show_progress=True,
             api_name="generate",
         )

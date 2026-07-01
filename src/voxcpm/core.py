@@ -29,8 +29,8 @@ class VoxCPM:
                 (weights, configs, etc.). Typically the directory returned by
                 a prior download step.
             zipenhancer_model_path: ModelScope acoustic noise suppression model
-                id or local path. If None, denoiser will not be initialized.
-            enable_denoiser: Whether to initialize the denoiser pipeline.
+                id or local path. If None, denoiser will not be available.
+            enable_denoiser: Whether denoising may be used when requested.
             optimize: Whether to optimize the model with torch.compile. True by default, but can be disabled for debugging.
             device: Runtime device. If set to ``None`` or ``"auto"``, VoxCPM
                 will choose automatically (preferring CUDA, then MPS, then CPU).
@@ -90,12 +90,7 @@ class VoxCPM:
 
         self.text_normalizer = None
         self.denoiser = None
-        if enable_denoiser and zipenhancer_model_path is not None:
-            from .zipenhancer import ZipEnhancer
-
-            self.denoiser = ZipEnhancer(zipenhancer_model_path)
-        else:
-            self.denoiser = None
+        self._denoiser_model_path = zipenhancer_model_path if enable_denoiser else None
         if optimize:
             print("Warm up VoxCPMModel...", file=sys.stderr)
             self.tts_model.generate(
@@ -121,7 +116,7 @@ class VoxCPM:
 
         Args:
             hf_model_id: Explicit Hugging Face repository id (e.g. "org/repo") or local path.
-            load_denoiser: Whether to initialize the denoiser pipeline.
+            load_denoiser: Whether denoising may be used when requested.
             optimize: Whether to optimize the model with torch.compile. True by default, but can be disabled for debugging.
             zipenhancer_model_id: Denoiser model id or path for ModelScope
                 acoustic noise suppression.
@@ -179,6 +174,20 @@ class VoxCPM:
 
     def generate_streaming(self, *args, **kwargs) -> Generator[np.ndarray, None, None]:
         return self._generate(*args, streaming=True, **kwargs)
+
+    def _get_or_load_denoiser(self):
+        if self._denoiser_model_path is None:
+            return None
+        if self.denoiser is None:
+            try:
+                from .zipenhancer import ZipEnhancer
+            except ImportError as exc:
+                raise RuntimeError(
+                    "ZipEnhancer denoising was requested, but its dependencies are not available. "
+                    "Install the denoising dependencies or run with denoise disabled."
+                ) from exc
+            self.denoiser = ZipEnhancer(self._denoiser_model_path)
+        return self.denoiser
 
     def _generate(
         self,
@@ -251,16 +260,18 @@ class VoxCPM:
             actual_prompt_path = prompt_wav_path
             actual_ref_path = reference_wav_path
 
-            if denoise and self.denoiser is not None:
+            denoiser = self._get_or_load_denoiser() if denoise else None
+
+            if denoiser is not None:
                 if prompt_wav_path is not None:
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
                         temp_files.append(tmp.name)
-                    self.denoiser.enhance(prompt_wav_path, output_path=temp_files[-1])
+                    denoiser.enhance(prompt_wav_path, output_path=temp_files[-1])
                     actual_prompt_path = temp_files[-1]
                 if reference_wav_path is not None:
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
                         temp_files.append(tmp.name)
-                    self.denoiser.enhance(reference_wav_path, output_path=temp_files[-1])
+                    denoiser.enhance(reference_wav_path, output_path=temp_files[-1])
                     actual_ref_path = temp_files[-1]
 
             if actual_prompt_path is not None or actual_ref_path is not None:

@@ -155,12 +155,7 @@ exit /b 2
 :args_done
 if "%INSTALL_TIMESTAMPS%"=="0" set "DOWNLOAD_TIMESTAMP_MODEL=0"
 if /I "%TORCH_BACKEND%"=="auto" (
-    where nvidia-smi >nul 2>nul
-    if errorlevel 1 (
-        set "TORCH_BACKEND=cpu"
-    ) else (
-        set "TORCH_BACKEND=cuda"
-    )
+    call :detect_torch_backend
 )
 if /I "%TORCH_BACKEND%"=="cuda" if not defined PYTORCH_INDEX_URL set "PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu121"
 if /I "%TORCH_BACKEND%"=="cpu" if not defined PYTORCH_INDEX_URL set "PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cpu"
@@ -322,7 +317,29 @@ if "%DOWNLOAD_MODEL%"=="1" echo   Default Hugging Face model is installed at %MO
 if "%DOWNLOAD_MODEL%"=="0" echo   Hugging Face model pre-download was skipped.
 if "%DOWNLOAD_MS_MODELS%"=="1" echo   Local ModelScope denoiser and ASR models are installed under models.
 if "%DOWNLOAD_TIMESTAMP_MODEL%"=="1" echo   stable-ts Whisper base model was cached.
-echo   CUDA is selected automatically when nvidia-smi is available; use --cpu to force CPU wheels.
+echo   CUDA is selected automatically when an NVIDIA GPU is detected; use --cpu to force CPU wheels.
+exit /b 0
+
+:detect_torch_backend
+where nvidia-smi >nul 2>nul
+if not errorlevel 1 (
+    set "TORCH_BACKEND=cuda"
+    exit /b 0
+)
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$gpus = Get-CimInstance Win32_VideoController; foreach ($gpu in $gpus) { if ($gpu.Name -match 'NVIDIA') { exit 0 } }; exit 1" >nul 2>nul
+if not errorlevel 1 (
+    set "TORCH_BACKEND=cuda"
+    exit /b 0
+)
+
+wmic path win32_VideoController get name 2>nul | findstr /I "NVIDIA" >nul 2>nul
+if not errorlevel 1 (
+    set "TORCH_BACKEND=cuda"
+    exit /b 0
+)
+
+set "TORCH_BACKEND=cpu"
 exit /b 0
 
 :find_python
