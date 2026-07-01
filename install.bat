@@ -9,7 +9,7 @@ set "INSTALL_DEV=1"
 set "INSTALL_TIMESTAMPS=1"
 set "DOWNLOAD_MODEL=1"
 set "DOWNLOAD_MS_MODELS=1"
-set "DOWNLOAD_PARAKEET_MODEL=auto"
+set "DOWNLOAD_PARAKEET_MODEL=1"
 set "DOWNLOAD_TIMESTAMP_MODEL=1"
 set "RUN_SMOKE_CHECKS=1"
 set "DRY_RUN=0"
@@ -37,7 +37,7 @@ echo   --cpu                  Force CPU torch/torchaudio wheels.
 echo   --pytorch-index-url U  Use a custom PyTorch wheel index URL.
 echo   --model-id ID          Hugging Face model to download (default: openbmb/VoxCPM2).
 echo   --model-dir DIR        Local model directory (default: models\openbmb__VoxCPM2).
-echo   --download-parakeet    Pre-download NVIDIA Parakeet ASR even for CPU installs.
+echo   --download-parakeet    Pre-download NVIDIA Parakeet ASR (enabled by default).
 echo   --skip-parakeet        Skip NVIDIA Parakeet ASR pre-download.
 echo   --parakeet-model-dir D Local Parakeet ASR directory (default: models\nvidia__parakeet-tdt-0.6b-v3).
 echo   --skip-models          Skip all model pre-downloads.
@@ -184,13 +184,7 @@ if /I "%TORCH_BACKEND%"=="auto" (
 )
 if /I "%TORCH_BACKEND%"=="cuda" if not defined PYTORCH_INDEX_URL set "PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu121"
 if /I "%TORCH_BACKEND%"=="cpu" if not defined PYTORCH_INDEX_URL set "PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cpu"
-if /I "%DOWNLOAD_PARAKEET_MODEL%"=="auto" (
-    if /I "%TORCH_BACKEND%"=="cuda" (
-        set "DOWNLOAD_PARAKEET_MODEL=1"
-    ) else (
-        set "DOWNLOAD_PARAKEET_MODEL=0"
-    )
-)
+if /I "%DOWNLOAD_PARAKEET_MODEL%"=="auto" set "DOWNLOAD_PARAKEET_MODEL=1"
 
 set "PROJECT_SPEC=."
 if "%INSTALL_TIMESTAMPS%"=="1" if "%INSTALL_DEV%"=="1" set "PROJECT_SPEC=.[timestamps,dev]"
