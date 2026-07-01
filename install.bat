@@ -9,6 +9,7 @@ set "INSTALL_DEV=1"
 set "INSTALL_TIMESTAMPS=1"
 set "DOWNLOAD_MODEL=1"
 set "DOWNLOAD_MS_MODELS=1"
+set "DOWNLOAD_PARAKEET_MODEL=auto"
 set "DOWNLOAD_TIMESTAMP_MODEL=1"
 set "RUN_SMOKE_CHECKS=1"
 set "DRY_RUN=0"
@@ -16,6 +17,8 @@ set "TORCH_BACKEND=auto"
 set "PYTORCH_INDEX_URL="
 set "MODEL_ID=openbmb/VoxCPM2"
 set "MODEL_DIR=models\openbmb__VoxCPM2"
+set "PARAKEET_MODEL_ID=nvidia/parakeet-tdt-0.6b-v3"
+set "PARAKEET_MODEL_DIR=models\nvidia__parakeet-tdt-0.6b-v3"
 set "ZIPENHANCER_MODEL_DIR=models\iic__speech_zipenhancer_ans_multiloss_16k_base"
 set "ASR_MODEL_DIR=models\iic__SenseVoiceSmall"
 set "PYTHON_CMD="
@@ -34,6 +37,9 @@ echo   --cpu                  Force CPU torch/torchaudio wheels.
 echo   --pytorch-index-url U  Use a custom PyTorch wheel index URL.
 echo   --model-id ID          Hugging Face model to download (default: openbmb/VoxCPM2).
 echo   --model-dir DIR        Local model directory (default: models\openbmb__VoxCPM2).
+echo   --download-parakeet    Pre-download NVIDIA Parakeet ASR even for CPU installs.
+echo   --skip-parakeet        Skip NVIDIA Parakeet ASR pre-download.
+echo   --parakeet-model-dir D Local Parakeet ASR directory (default: models\nvidia__parakeet-tdt-0.6b-v3).
 echo   --skip-models          Skip all model pre-downloads.
 echo   --skip-modelscope      Skip ModelScope denoiser and ASR model pre-downloads.
 echo   --skip-timestamp-model Skip stable-ts Whisper base model pre-download.
@@ -72,9 +78,20 @@ if /I "%~1"=="--download-model" (
     shift
     goto parse_args
 )
+if /I "%~1"=="--download-parakeet" (
+    set "DOWNLOAD_PARAKEET_MODEL=1"
+    shift
+    goto parse_args
+)
+if /I "%~1"=="--skip-parakeet" (
+    set "DOWNLOAD_PARAKEET_MODEL=0"
+    shift
+    goto parse_args
+)
 if /I "%~1"=="--skip-models" (
     set "DOWNLOAD_MODEL=0"
     set "DOWNLOAD_MS_MODELS=0"
+    set "DOWNLOAD_PARAKEET_MODEL=0"
     set "DOWNLOAD_TIMESTAMP_MODEL=0"
     shift
     goto parse_args
@@ -113,6 +130,7 @@ if /I "%~1"=="--venv" goto parse_venv
 if /I "%~1"=="--pytorch-index-url" goto parse_pytorch_index
 if /I "%~1"=="--model-id" goto parse_model_id
 if /I "%~1"=="--model-dir" goto parse_model_dir
+if /I "%~1"=="--parakeet-model-dir" goto parse_parakeet_model_dir
 
 echo Unknown option: %~1
 echo Run install.bat --help for usage.
@@ -147,6 +165,13 @@ set "MODEL_DIR=%~1"
 shift
 goto parse_args
 
+:parse_parakeet_model_dir
+shift
+if "%~1"=="" goto arg_error
+set "PARAKEET_MODEL_DIR=%~1"
+shift
+goto parse_args
+
 :arg_error
 echo Missing value for the previous option.
 echo Run install.bat --help for usage.
@@ -159,6 +184,13 @@ if /I "%TORCH_BACKEND%"=="auto" (
 )
 if /I "%TORCH_BACKEND%"=="cuda" if not defined PYTORCH_INDEX_URL set "PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu121"
 if /I "%TORCH_BACKEND%"=="cpu" if not defined PYTORCH_INDEX_URL set "PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cpu"
+if /I "%DOWNLOAD_PARAKEET_MODEL%"=="auto" (
+    if /I "%TORCH_BACKEND%"=="cuda" (
+        set "DOWNLOAD_PARAKEET_MODEL=1"
+    ) else (
+        set "DOWNLOAD_PARAKEET_MODEL=0"
+    )
+)
 
 set "PROJECT_SPEC=."
 if "%INSTALL_TIMESTAMPS%"=="1" if "%INSTALL_DEV%"=="1" set "PROJECT_SPEC=.[timestamps,dev]"
@@ -173,6 +205,7 @@ echo   Project:     %PROJECT_SPEC%
 echo   Torch:       %TORCH_BACKEND%
 if defined PYTORCH_INDEX_URL echo   Torch index: %PYTORCH_INDEX_URL%
 if "%DOWNLOAD_MODEL%"=="1" echo   HF model:    %MODEL_ID% -^> %MODEL_DIR%
+if "%DOWNLOAD_PARAKEET_MODEL%"=="1" echo   Parakeet:    %PARAKEET_MODEL_ID% -^> %PARAKEET_MODEL_DIR%
 if "%DOWNLOAD_MS_MODELS%"=="1" echo   MS models:   local denoiser + ASR models
 if "%DOWNLOAD_TIMESTAMP_MODEL%"=="1" echo   TS model:    stable-ts Whisper base
 if "%DRY_RUN%"=="1" echo   Mode:        dry run
@@ -250,6 +283,14 @@ python -c "from huggingface_hub import snapshot_download; snapshot_download(repo
 if errorlevel 1 goto fail
 
 :skip_hf_download
+if not "%DOWNLOAD_PARAKEET_MODEL%"=="1" goto skip_parakeet_download
+echo.
+echo ^> Downloading NVIDIA Parakeet ASR to %PARAKEET_MODEL_DIR%
+if "%DRY_RUN%"=="1" goto skip_parakeet_download
+python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='%PARAKEET_MODEL_ID%', local_dir=r'%PARAKEET_MODEL_DIR%')"
+if errorlevel 1 goto fail
+
+:skip_parakeet_download
 if not "%DOWNLOAD_MS_MODELS%"=="1" goto skip_modelscope_downloads
 echo.
 echo ^> Downloading ModelScope denoiser to %ZIPENHANCER_MODEL_DIR%
@@ -279,6 +320,11 @@ call :run python -m pip show voxcpm torch torchaudio gradio modelscope huggingfa
 if errorlevel 1 goto fail
 call :run python -c "import torch, torchaudio, gradio, voxcpm, soundfile, librosa, transformers, datasets, huggingface_hub, modelscope, safetensors, argbind, yaml, funasr, tensorboardX"
 if errorlevel 1 goto fail
+if not "%DOWNLOAD_PARAKEET_MODEL%"=="1" goto skip_parakeet_smoke
+call :run python -c "from transformers import AutoModelForTDT, AutoProcessor; AutoProcessor.from_pretrained(r'%PARAKEET_MODEL_DIR%', local_files_only=True)"
+if errorlevel 1 goto fail
+
+:skip_parakeet_smoke
 if not "%INSTALL_TIMESTAMPS%"=="1" goto skip_timestamp_smoke
 call :run python -c "import stable_whisper"
 if errorlevel 1 goto fail
@@ -305,7 +351,7 @@ if /I "%TORCH_BACKEND%"=="cuda" set "RUNTIME_DEVICE_ARG= --device cuda"
 if /I "%TORCH_BACKEND%"=="cpu" set "RUNTIME_DEVICE_ARG= --device cpu"
 echo Start commands:
 echo   %VENV_DIR%\Scripts\activate.bat
-echo   python app.py --model-id "%MODEL_DIR%" --port 8808%RUNTIME_DEVICE_ARG%
+echo   python app.py --model-id "%MODEL_DIR%" --port 8808%RUNTIME_DEVICE_ARG% --asr-backend auto
 echo   voxcpm --help
 echo   voxcpm design --model-path "%MODEL_DIR%"%RUNTIME_DEVICE_ARG% --text "Hello from VoxCPM2." --output outputs\demo.wav
 echo   python lora_ft_webui.py
@@ -315,6 +361,8 @@ echo   Web demo, CLI, and LoRA fine-tuning UI are installed.
 if "%INSTALL_TIMESTAMPS%"=="1" echo   Timestamp dependencies are installed.
 if "%DOWNLOAD_MODEL%"=="1" echo   Default Hugging Face model is installed at %MODEL_DIR%.
 if "%DOWNLOAD_MODEL%"=="0" echo   Hugging Face model pre-download was skipped.
+if "%DOWNLOAD_PARAKEET_MODEL%"=="1" echo   NVIDIA Parakeet ASR is installed at %PARAKEET_MODEL_DIR%.
+if "%DOWNLOAD_PARAKEET_MODEL%"=="0" echo   NVIDIA Parakeet ASR pre-download was skipped.
 if "%DOWNLOAD_MS_MODELS%"=="1" echo   Local ModelScope denoiser and ASR models are installed under models.
 if "%DOWNLOAD_TIMESTAMP_MODEL%"=="1" echo   stable-ts Whisper base model was cached.
 echo   CUDA is selected automatically when an NVIDIA GPU is detected; use --cpu to force CPU wheels.

@@ -25,6 +25,15 @@ def test_extract_asr_text_removes_sensevoice_tags():
     assert app._extract_asr_text(result) == "你好，世界"
 
 
+def test_extract_parakeet_asr_text_accepts_batch_decode_output():
+    assert app._extract_parakeet_asr_text([" hej ", "", " världen"]) == "hej världen"
+
+
+def test_normalize_asr_backend_rejects_unknown_backend():
+    with pytest.raises(ValueError, match="Unknown ASR backend"):
+        app._normalize_asr_backend("whisper")
+
+
 def test_prepare_asr_audio_keeps_16khz_mono_wav(tmp_path):
     wav_path = tmp_path / "mono.wav"
     sf.write(wav_path, np.zeros(160, dtype=np.float32), 16000)
@@ -79,6 +88,35 @@ def test_resolve_generation_inputs_auto_transcribes_blank_ultimate_prompt():
 def test_resolve_generation_inputs_requires_audio_for_ultimate_mode():
     with pytest.raises(app.gr.Error, match="Upload reference audio"):
         app._resolve_generation_inputs(object(), None, True, "", "")
+
+
+def test_auto_asr_backend_prefers_local_parakeet_on_cuda():
+    demo = app.VoxCPMDemo.__new__(app.VoxCPMDemo)
+    demo.asr_backend = "auto"
+    demo.device = "cuda"
+    demo.parakeet_model_id = "models/nvidia__parakeet-tdt-0.6b-v3"
+
+    assert demo._should_use_parakeet_asr() is True
+    assert demo._resolved_asr_backend_name() == "parakeet"
+
+
+def test_auto_asr_backend_uses_sensevoice_without_local_parakeet():
+    demo = app.VoxCPMDemo.__new__(app.VoxCPMDemo)
+    demo.asr_backend = "auto"
+    demo.device = "cuda"
+    demo.parakeet_model_id = None
+
+    assert demo._should_use_parakeet_asr() is False
+    assert demo._resolved_asr_backend_name() == "sensevoice"
+
+
+def test_sensevoice_asr_backend_disables_local_parakeet():
+    demo = app.VoxCPMDemo.__new__(app.VoxCPMDemo)
+    demo.asr_backend = "sensevoice"
+    demo.device = "cuda"
+    demo.parakeet_model_id = "models/nvidia__parakeet-tdt-0.6b-v3"
+
+    assert demo._should_use_parakeet_asr() is False
 
 
 def test_generate_tts_audio_normalizes_gradio_filedata_path():

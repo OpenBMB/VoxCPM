@@ -28,7 +28,7 @@ dependencies = [
     "torch>=2.5.0",
     "torchaudio>=2.5.0",
     "torchcodec",
-    "transformers>=4.36.2",
+    "transformers>=5.12.0",
     "einops",
     "gradio>=6,<7",
     "inflect",

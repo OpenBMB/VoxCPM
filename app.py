@@ -176,6 +176,10 @@ DEFAULT_TARGET_TEXT = (
     "VoxCPM2 is a creative multilingual TTS model from ModelBest, " "designed to generate highly realistic speech."
 )
 
+ASR_BACKENDS = {"auto", "sensevoice", "parakeet"}
+PARAKEET_ASR_MODEL_ID = "nvidia/parakeet-tdt-0.6b-v3"
+PARAKEET_LOCAL_MODEL_DIRNAME = PARAKEET_ASR_MODEL_ID.replace("/", "__")
+
 _CUSTOM_CSS = """
 .logo-container {
     text-align: center;
@@ -259,6 +263,16 @@ def _extract_asr_text(result) -> str:
     return re.sub(r"<\|.*?\|>", "", raw_text).strip()
 
 
+def _extract_parakeet_asr_text(result) -> str:
+    if not result:
+        return ""
+    if isinstance(result, str):
+        return result.strip()
+    if isinstance(result, (list, tuple)):
+        return " ".join(str(item).strip() for item in result if str(item).strip()).strip()
+    return str(result).strip()
+
+
 def _prepare_asr_audio(audio_path: str, sample_rate: int = 16000) -> Tuple[str, Optional[str]]:
     """Return an ASR-friendly 16 kHz mono file and optional temp path to remove."""
     import librosa
@@ -281,6 +295,13 @@ def _prepare_asr_audio(audio_path: str, sample_rate: int = 16000) -> Tuple[str, 
         temp_path = tmp.name
     sf.write(temp_path, audio, sample_rate, subtype="PCM_16")
     return temp_path, temp_path
+
+
+def _normalize_asr_backend(asr_backend: str) -> str:
+    backend = (asr_backend or "auto").strip().lower()
+    if backend not in ASR_BACKENDS:
+        raise ValueError(f"Unknown ASR backend: {asr_backend!r}. Expected one of: {', '.join(sorted(ASR_BACKENDS))}.")
+    return backend
 
 
 def _resolve_generation_inputs(
@@ -307,16 +328,19 @@ def _resolve_generation_inputs(
 
 
 class VoxCPMDemo:
-    def __init__(self, model_id: str = "openbmb/VoxCPM2", device: str = "auto") -> None:
+    def __init__(self, model_id: str = "openbmb/VoxCPM2", device: str = "auto", asr_backend: str = "auto") -> None:
         self.device = resolve_runtime_device(device, "cuda")
         logger.info(f"Running VoxCPM on device: {self.device}")
         self.optimize = self.device.startswith("cuda")
+        self.asr_backend = _normalize_asr_backend(os.environ.get("VOXCPM_ASR_BACKEND", asr_backend))
 
         project_root = Path(__file__).parent
         local_asr_model = project_root / "models" / "iic__SenseVoiceSmall"
+        local_parakeet_model = project_root / "models" / PARAKEET_LOCAL_MODEL_DIRNAME
         local_zipenhancer_model = project_root / "models" / "iic__speech_zipenhancer_ans_multiloss_16k_base"
 
         self.asr_model_id = str(local_asr_model) if local_asr_model.exists() else "iic/SenseVoiceSmall"
+        self.parakeet_model_id = str(local_parakeet_model) if local_parakeet_model.exists() else None
         self.zipenhancer_model_id = (
             str(local_zipenhancer_model)
             if local_zipenhancer_model.exists()
@@ -324,6 +348,9 @@ class VoxCPMDemo:
         )
         self.asr_device = "cuda:0" if self.device.startswith("cuda") else "cpu"
         self.asr_model: Optional[AutoModel] = None
+        self.parakeet_processor = None
+        self.parakeet_model = None
+        logger.info("ASR backend: %s", self._resolved_asr_backend_name())
 
         self.voxcpm_model: Optional[voxcpm.VoxCPM] = None
         self._model_id = model_id
@@ -354,18 +381,85 @@ class VoxCPMDemo:
         logger.info("ASR model loaded successfully.")
         return self.asr_model
 
+    def _should_use_parakeet_asr(self) -> bool:
+        if self.asr_backend == "sensevoice":
+            return False
+        if self.asr_backend == "parakeet":
+            return True
+        return self.device.startswith("cuda") and self.parakeet_model_id is not None
+
+    def _resolved_asr_backend_name(self) -> str:
+        if self._should_use_parakeet_asr():
+            return "parakeet"
+        return "sensevoice"
+
+    def get_or_load_parakeet_asr_model(self):
+        if self.parakeet_processor is not None and self.parakeet_model is not None:
+            return self.parakeet_processor, self.parakeet_model
+        if self.parakeet_model_id is None:
+            raise RuntimeError(
+                "NVIDIA Parakeet ASR is not installed locally. Run install.bat to pre-download it, "
+                "or start app.py with --asr-backend sensevoice."
+            )
+        try:
+            import torch
+            from transformers import AutoModelForTDT, AutoProcessor
+        except ImportError as exc:
+            raise RuntimeError(
+                "NVIDIA Parakeet ASR requires a Transformers build with AutoModelForTDT support."
+            ) from exc
+
+        target_device = "cuda" if self.device.startswith("cuda") else "cpu"
+        logger.info("Loading Parakeet ASR model: %s on device: %s", self.parakeet_model_id, target_device)
+        self.parakeet_processor = AutoProcessor.from_pretrained(self.parakeet_model_id, local_files_only=True)
+        self.parakeet_model = AutoModelForTDT.from_pretrained(
+            self.parakeet_model_id,
+            dtype="auto",
+            local_files_only=True,
+        )
+        self.parakeet_model.to(target_device)
+        self.parakeet_model.eval()
+        logger.info("Parakeet ASR model loaded successfully.")
+        return self.parakeet_processor, self.parakeet_model
+
+    def _recognize_with_sensevoice(self, asr_audio_path: str) -> str:
+        res = self.get_or_load_asr_model().generate(
+            input=asr_audio_path,
+            language="auto",
+            use_itn=True,
+        )
+        return _extract_asr_text(res)
+
+    def _recognize_with_parakeet(self, asr_audio_path: str) -> str:
+        import librosa
+        import torch
+
+        processor, model = self.get_or_load_parakeet_asr_model()
+        sample_rate = getattr(processor.feature_extractor, "sampling_rate", 16000)
+        audio, _ = librosa.load(asr_audio_path, sr=sample_rate, mono=True)
+        if audio.size == 0:
+            return ""
+        inputs = processor([audio], sampling_rate=sample_rate)
+        inputs.to(model.device, dtype=model.dtype)
+        with torch.inference_mode():
+            output = model.generate(**inputs, return_dict_in_generate=True)
+        sequences = getattr(output, "sequences", output)
+        return _extract_parakeet_asr_text(processor.decode(sequences, skip_special_tokens=True))
+
     def prompt_wav_recognition(self, prompt_wav: Optional[str]) -> str:
         prompt_wav_path = _coerce_audio_filepath(prompt_wav)
         if prompt_wav_path is None:
             return ""
         asr_audio_path, temp_path = _prepare_asr_audio(prompt_wav_path)
         try:
-            res = self.get_or_load_asr_model().generate(
-                input=asr_audio_path,
-                language="auto",
-                use_itn=True,
-            )
-            return _extract_asr_text(res)
+            if self._should_use_parakeet_asr():
+                try:
+                    return self._recognize_with_parakeet(asr_audio_path)
+                except Exception:
+                    if self.asr_backend == "parakeet":
+                        raise
+                    logger.warning("Parakeet ASR failed; falling back to SenseVoice.", exc_info=True)
+            return self._recognize_with_sensevoice(asr_audio_path)
         finally:
             if temp_path and os.path.exists(temp_path):
                 try:
@@ -715,8 +809,9 @@ def run_demo(
     show_error: bool = True,
     model_id: str = "openbmb/VoxCPM2",
     device: str = "auto",
+    asr_backend: str = "auto",
 ):
-    demo = VoxCPMDemo(model_id=model_id, device=device)
+    demo = VoxCPMDemo(model_id=model_id, device=device, asr_backend=asr_backend)
     interface = create_demo_interface(demo)
     interface.queue(max_size=10, default_concurrency_limit=1).launch(
         server_name=server_name,
@@ -744,5 +839,12 @@ if __name__ == "__main__":
         default="auto",
         help="Runtime device: auto, cpu, mps, cuda, or cuda:N (default: auto)",
     )
+    parser.add_argument(
+        "--asr-backend",
+        type=str,
+        default="auto",
+        choices=sorted(ASR_BACKENDS),
+        help="Reference audio transcription backend: auto, sensevoice, or parakeet (default: auto)",
+    )
     args = parser.parse_args()
-    run_demo(model_id=args.model_id, server_port=args.port, device=args.device)
+    run_demo(model_id=args.model_id, server_port=args.port, device=args.device, asr_backend=args.asr_backend)
