@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+import soundfile as sf
 
 import app
 
@@ -22,6 +23,33 @@ def test_extract_asr_text_removes_sensevoice_tags():
     result = [{"text": "<|zh|><|NEUTRAL|><|Speech|><|withitn|>你好，世界"}]
 
     assert app._extract_asr_text(result) == "你好，世界"
+
+
+def test_prepare_asr_audio_keeps_16khz_mono_wav(tmp_path):
+    wav_path = tmp_path / "mono.wav"
+    sf.write(wav_path, np.zeros(160, dtype=np.float32), 16000)
+
+    prepared_path, temp_path = app._prepare_asr_audio(str(wav_path))
+
+    assert prepared_path == str(wav_path)
+    assert temp_path is None
+
+
+def test_prepare_asr_audio_converts_to_16khz_mono_wav(tmp_path):
+    wav_path = tmp_path / "stereo_8k.wav"
+    audio = np.zeros((80, 2), dtype=np.float32)
+    sf.write(wav_path, audio, 8000)
+
+    prepared_path, temp_path = app._prepare_asr_audio(str(wav_path))
+
+    try:
+        info = sf.info(prepared_path)
+        assert temp_path == prepared_path
+        assert info.samplerate == 16000
+        assert info.channels == 1
+    finally:
+        if temp_path:
+            app.os.unlink(temp_path)
 
 
 def test_resolve_generation_inputs_auto_transcribes_blank_ultimate_prompt():

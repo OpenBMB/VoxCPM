@@ -3,6 +3,7 @@ import re
 import sys
 import logging
 import random
+import tempfile
 import numpy as np
 import gradio as gr
 from typing import Optional, Tuple
@@ -258,6 +259,30 @@ def _extract_asr_text(result) -> str:
     return re.sub(r"<\|.*?\|>", "", raw_text).strip()
 
 
+def _prepare_asr_audio(audio_path: str, sample_rate: int = 16000) -> Tuple[str, Optional[str]]:
+    """Return an ASR-friendly 16 kHz mono file and optional temp path to remove."""
+    import librosa
+    import soundfile as sf
+
+    source_path = os.fspath(audio_path)
+    try:
+        info = sf.info(source_path)
+        suffix = Path(source_path).suffix.lower()
+        if info.samplerate == sample_rate and info.channels == 1 and suffix in {".wav", ".flac"}:
+            return source_path, None
+    except Exception:
+        pass
+
+    audio, _ = librosa.load(source_path, sr=sample_rate, mono=True)
+    if audio.size == 0:
+        raise ValueError("Reference audio contains no readable samples.")
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        temp_path = tmp.name
+    sf.write(temp_path, audio, sample_rate, subtype="PCM_16")
+    return temp_path, temp_path
+
+
 def _resolve_generation_inputs(
     demo,
     ref_wav,
@@ -333,12 +358,20 @@ class VoxCPMDemo:
         prompt_wav_path = _coerce_audio_filepath(prompt_wav)
         if prompt_wav_path is None:
             return ""
-        res = self.get_or_load_asr_model().generate(
-            input=prompt_wav_path,
-            language="auto",
-            use_itn=True,
-        )
-        return _extract_asr_text(res)
+        asr_audio_path, temp_path = _prepare_asr_audio(prompt_wav_path)
+        try:
+            res = self.get_or_load_asr_model().generate(
+                input=asr_audio_path,
+                language="auto",
+                use_itn=True,
+            )
+            return _extract_asr_text(res)
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.unlink(temp_path)
+                except OSError:
+                    pass
 
     def _build_generate_kwargs(
         self,
@@ -468,16 +501,31 @@ def create_demo_interface(demo: VoxCPMDemo):
         )
         return (sr, wav_np), last_successful_seed, actual_prompt_text if use_prompt_text else gr.update()
 
-    def _on_toggle_instant(checked):
+    def _on_toggle_instant(checked, current_prompt_text, audio_path):
         """Instant UI toggle — no ASR, no blocking."""
+        current_prompt_text = current_prompt_text or ""
         if checked:
+            placeholder = (
+                "Recognizing reference audio..."
+                if _coerce_audio_filepath(audio_path) and not current_prompt_text.strip()
+                else I18N("prompt_text_placeholder")
+            )
             return (
-                gr.update(visible=True, value="", placeholder="Recognizing reference audio..."),
+                gr.update(visible=True, value=current_prompt_text, placeholder=placeholder),
                 gr.update(visible=False),
             )
         return (
             gr.update(visible=False),
             gr.update(visible=True, interactive=True),
+        )
+
+    def _on_reference_audio_change(checked, current_prompt_text, audio_path):
+        if not checked or not _coerce_audio_filepath(audio_path):
+            return gr.update()
+        return gr.update(
+            visible=True,
+            value=current_prompt_text or "",
+            placeholder="Recognizing reference audio...",
         )
 
     def _run_asr_if_needed(checked, audio_path):
@@ -489,10 +537,29 @@ def create_demo_interface(demo: VoxCPMDemo):
             logger.info("Running ASR on reference audio...")
             asr_text = demo.prompt_wav_recognition(audio_file)
             logger.info("ASR result: %r", asr_text[:60])
-            return gr.update(value=asr_text)
+            if not asr_text:
+                return gr.update(
+                    value="",
+                    placeholder="No speech was recognized. Enter the reference transcript manually.",
+                )
+            return gr.update(value=asr_text, placeholder=I18N("prompt_text_placeholder"))
         except Exception as e:
-            logger.warning(f"ASR recognition failed: {e}")
-            return gr.update(value="")
+            logger.warning("ASR recognition failed: %s", e, exc_info=True)
+            return gr.update(value="", placeholder=f"ASR failed: {e}")
+
+    def _ensure_prompt_text_before_generate(ref_wav, use_prompt_text, prompt_text_value):
+        if not use_prompt_text:
+            return gr.update()
+        audio_path, actual_prompt_text, _ = _resolve_generation_inputs(
+            demo,
+            ref_wav,
+            True,
+            prompt_text_value,
+            "",
+        )
+        if not audio_path:
+            raise gr.Error("Upload reference audio before using Ultimate Cloning Mode.")
+        return gr.update(value=actual_prompt_text, placeholder=I18N("prompt_text_placeholder"))
 
     with gr.Blocks(theme=_APP_THEME, css=_CUSTOM_CSS) as interface:
         gr.HTML(
@@ -587,7 +654,7 @@ def create_demo_interface(demo: VoxCPMDemo):
 
         show_prompt_text.change(
             fn=_on_toggle_instant,
-            inputs=[show_prompt_text],
+            inputs=[show_prompt_text, prompt_text, reference_wav],
             outputs=[prompt_text, control_instruction],
         ).then(
             fn=_run_asr_if_needed,
@@ -596,6 +663,10 @@ def create_demo_interface(demo: VoxCPMDemo):
         )
 
         reference_wav.change(
+            fn=_on_reference_audio_change,
+            inputs=[show_prompt_text, prompt_text, reference_wav],
+            outputs=[prompt_text],
+        ).then(
             fn=_run_asr_if_needed,
             inputs=[show_prompt_text, reference_wav],
             outputs=[prompt_text],
@@ -612,6 +683,10 @@ def create_demo_interface(demo: VoxCPMDemo):
             inputs=[random_seed, seed_value],
             outputs=[seed_value],
             show_progress=False,
+        ).then(
+            fn=_ensure_prompt_text_before_generate,
+            inputs=[reference_wav, show_prompt_text, prompt_text],
+            outputs=[prompt_text],
         ).then(
             fn=_generate,
             inputs=[
