@@ -11,6 +11,11 @@ from pathlib import Path
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+PROJECT_ROOT = Path(__file__).resolve().parent
+SRC_DIR = PROJECT_ROOT / "src"
+if SRC_DIR.exists() and str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
 import voxcpm
 from voxcpm.model.utils import resolve_runtime_device
 
@@ -430,7 +435,7 @@ def create_demo_interface(demo: VoxCPMDemo):
             logger.warning(f"ASR recognition failed: {e}")
             return gr.update(value="")
 
-    with gr.Blocks() as interface:
+    with gr.Blocks(theme=_APP_THEME, css=_CUSTOM_CSS) as interface:
         gr.HTML(
             '<div class="logo-container">'
             '<img src="/gradio_api/file=assets/voxcpm_logo.png" alt="VoxCPM Logo">'
@@ -577,9 +582,8 @@ def run_demo(
         server_name=server_name,
         server_port=server_port,
         show_error=show_error,
+        inbrowser=True,
         i18n=I18N,
-        theme=_APP_THEME,
-        css=_CUSTOM_CSS,
     )
 
 
