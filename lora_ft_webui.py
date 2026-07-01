@@ -1324,4 +1324,4 @@ with gr.Blocks(title="VoxCPM LoRA WebUI", theme=gr.themes.Soft(), css=custom_css
 if __name__ == "__main__":
     # Ensure lora directory exists
     os.makedirs("lora", exist_ok=True)
-    app.queue().launch(server_name="0.0.0.0", server_port=7860)
+    app.queue().launch(server_name="0.0.0.0", server_port=7860, inbrowser=True)
