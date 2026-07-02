@@ -388,7 +388,7 @@ class VoxCPMDemo:
         return f"ASR: {model_name} | language: auto-detect | device: {device} | model: {model_path}"
 
     def preload_models(
-        self, *, preload_asr: bool = True, preload_tts: bool = True, preload_denoiser: bool = False
+        self, *, preload_asr: bool = True, preload_tts: bool = True, preload_denoiser: bool = True
     ) -> None:
         logger.info("Preloading models...")
         if preload_tts:
@@ -401,6 +401,9 @@ class VoxCPMDemo:
             if self._should_use_parakeet_asr():
                 logger.info("Preloading Parakeet ASR model (language=auto-detect)...")
                 self.get_or_load_parakeet_asr_model()
+                if self.asr_backend == "auto":
+                    logger.info("Preloading SenseVoice ASR fallback (language=auto)...")
+                    self.get_or_load_asr_model()
             else:
                 logger.info("Preloading SenseVoice ASR model (language=auto)...")
                 self.get_or_load_asr_model()
@@ -912,18 +915,6 @@ def create_demo_interface(demo: VoxCPMDemo):
     return interface
 
 
-def _start_background_preload(demo: VoxCPMDemo, *, preload_denoiser: bool = False) -> threading.Thread:
-    def _preload() -> None:
-        try:
-            demo.preload_models(preload_asr=True, preload_tts=True, preload_denoiser=preload_denoiser)
-        except Exception:
-            logger.exception("Background model preload failed. The web UI is still available.")
-
-    thread = threading.Thread(target=_preload, name="voxcpm-model-preload", daemon=True)
-    thread.start()
-    return thread
-
-
 def run_demo(
     server_name: str = "127.0.0.1",
     server_port: int = 8808,
@@ -932,13 +923,13 @@ def run_demo(
     device: str = "auto",
     asr_backend: str = "auto",
     preload: bool = True,
-    preload_denoiser: bool = False,
+    preload_denoiser: bool = True,
     open_browser: bool = True,
 ):
     demo = VoxCPMDemo(model_id=model_id, device=device, asr_backend=asr_backend)
-    interface = create_demo_interface(demo)
     if preload:
-        _start_background_preload(demo, preload_denoiser=preload_denoiser)
+        demo.preload_models(preload_asr=True, preload_tts=True, preload_denoiser=preload_denoiser)
+    interface = create_demo_interface(demo)
     logger.info("Launching web UI at http://%s:%s", server_name, server_port)
     interface.queue(max_size=10, default_concurrency_limit=1).launch(
         server_name=server_name,
@@ -982,7 +973,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--no-preload",
         action="store_true",
-        help="Disable background loading of TTS/ASR models at startup.",
+        help="Skip loading models before launching the web UI.",
     )
     parser.add_argument(
         "--no-browser",
@@ -992,7 +983,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--preload-denoiser",
         action="store_true",
-        help="Also load ZipEnhancer during background preload.",
+        default=True,
+        help="Deprecated: ZipEnhancer is loaded before launch by default.",
+    )
+    parser.add_argument(
+        "--no-preload-denoiser",
+        action="store_false",
+        dest="preload_denoiser",
+        help="Skip loading ZipEnhancer before launching the web UI.",
     )
     args = parser.parse_args()
     run_demo(

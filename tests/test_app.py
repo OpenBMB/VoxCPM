@@ -121,7 +121,7 @@ def test_sensevoice_asr_backend_disables_local_parakeet():
     assert demo._should_use_parakeet_asr() is False
 
 
-def test_preload_models_uses_parakeet_on_cuda():
+def test_preload_models_loads_tts_denoiser_parakeet_and_sensevoice_fallback_on_cuda_auto():
     class FakeCoreModel:
         def _get_or_load_denoiser(self):
             calls.append("denoiser")
@@ -137,7 +137,7 @@ def test_preload_models_uses_parakeet_on_cuda():
 
     demo.preload_models()
 
-    assert calls == ["tts", "parakeet"]
+    assert calls == ["tts", "denoiser", "parakeet", "sensevoice"]
 
 
 def test_get_or_load_asr_model_serializes_concurrent_loads(monkeypatch):
@@ -179,9 +179,8 @@ def test_get_or_load_asr_model_serializes_concurrent_loads(monkeypatch):
     assert all(result is results[0] for result in results)
 
 
-def test_run_demo_launches_local_browser_without_blocking_on_preload(monkeypatch):
+def test_run_demo_preloads_models_before_launching_web_ui(monkeypatch):
     events = []
-    captured_thread = {}
     launch_kwargs = {}
 
     class FakeDemo:
@@ -201,38 +200,20 @@ def test_run_demo_launches_local_browser_without_blocking_on_preload(monkeypatch
             events.append(("queue", kwargs))
             return FakeQueuedInterface()
 
-    class FakeThread:
-        def __init__(self, target, name, daemon):
-            captured_thread["target"] = target
-            captured_thread["name"] = name
-            captured_thread["daemon"] = daemon
-
-        def start(self):
-            events.append("thread_started")
-
     monkeypatch.setattr(app, "VoxCPMDemo", FakeDemo)
     monkeypatch.setattr(app, "create_demo_interface", lambda demo: FakeInterface())
-    monkeypatch.setattr(app.threading, "Thread", FakeThread)
 
     app.run_demo()
 
     assert events == [
         ("demo", "openbmb/VoxCPM2", "auto", "auto"),
-        "thread_started",
+        ("preload", {"preload_asr": True, "preload_tts": True, "preload_denoiser": True}),
         ("queue", {"max_size": 10, "default_concurrency_limit": 1}),
         "launch",
     ]
-    assert captured_thread["name"] == "voxcpm-model-preload"
-    assert captured_thread["daemon"] is True
     assert launch_kwargs["server_name"] == "127.0.0.1"
     assert launch_kwargs["server_port"] == 8808
     assert launch_kwargs["inbrowser"] is True
-
-    captured_thread["target"]()
-    assert events[-1] == (
-        "preload",
-        {"preload_asr": True, "preload_tts": True, "preload_denoiser": False},
-    )
 
 
 def test_prompt_wav_recognition_reports_progress_and_uses_parakeet(monkeypatch):
