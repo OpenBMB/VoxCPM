@@ -1,6 +1,7 @@
 launch.json
 .venv/
 __pycache__
+.numba_cache/
 voxcpm.egg-info
 .DS_Store
 ./pretrained_models/

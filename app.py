@@ -12,8 +12,13 @@ from funasr import AutoModel
 from pathlib import Path
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+# Librosa imports Numba during Parakeet ASR setup. On Windows this can stall
+# inside Numba's cache/JIT setup before the web UI is launched.
+os.environ.setdefault("NUMBA_DISABLE_JIT", "1")
 
 PROJECT_ROOT = Path(__file__).resolve().parent
+os.chdir(PROJECT_ROOT)
+os.environ.setdefault("NUMBA_CACHE_DIR", str(PROJECT_ROOT / ".numba_cache"))
 SRC_DIR = PROJECT_ROOT / "src"
 if SRC_DIR.exists() and str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
@@ -32,6 +37,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)],
+    force=True,
 )
 logger = logging.getLogger(__name__)
 
@@ -442,11 +448,7 @@ class VoxCPMDemo:
             return self.asr_model
 
     def _should_use_parakeet_asr(self) -> bool:
-        if self.asr_backend == "sensevoice":
-            return False
-        if self.asr_backend == "parakeet":
-            return True
-        return self.device.startswith("cuda") and self.parakeet_model_id is not None
+        return self.asr_backend == "parakeet"
 
     def _resolved_asr_backend_name(self) -> str:
         if self._should_use_parakeet_asr():
@@ -625,7 +627,7 @@ class VoxCPMDemo:
 
 
 def create_demo_interface(demo: VoxCPMDemo):
-    gr.set_static_paths(paths=[Path.cwd().absolute() / "assets"])
+    gr.set_static_paths(paths=[PROJECT_ROOT / "assets"])
 
     def _coerce_seed(seed_value) -> Optional[int]:
         if seed_value is None or seed_value == "":

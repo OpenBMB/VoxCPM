@@ -92,14 +92,14 @@ def test_resolve_generation_inputs_requires_audio_for_ultimate_mode():
         app._resolve_generation_inputs(object(), None, True, "", "")
 
 
-def test_auto_asr_backend_prefers_local_parakeet_on_cuda():
+def test_auto_asr_backend_uses_sensevoice_even_with_local_parakeet():
     demo = app.VoxCPMDemo.__new__(app.VoxCPMDemo)
     demo.asr_backend = "auto"
     demo.device = "cuda"
     demo.parakeet_model_id = "models/nvidia__parakeet-tdt-0.6b-v3"
 
-    assert demo._should_use_parakeet_asr() is True
-    assert demo._resolved_asr_backend_name() == "parakeet"
+    assert demo._should_use_parakeet_asr() is False
+    assert demo._resolved_asr_backend_name() == "sensevoice"
 
 
 def test_auto_asr_backend_uses_sensevoice_without_local_parakeet():
@@ -121,7 +121,17 @@ def test_sensevoice_asr_backend_disables_local_parakeet():
     assert demo._should_use_parakeet_asr() is False
 
 
-def test_preload_models_loads_tts_denoiser_parakeet_and_sensevoice_fallback_on_cuda_auto():
+def test_parakeet_asr_backend_uses_local_parakeet():
+    demo = app.VoxCPMDemo.__new__(app.VoxCPMDemo)
+    demo.asr_backend = "parakeet"
+    demo.device = "cuda"
+    demo.parakeet_model_id = "models/nvidia__parakeet-tdt-0.6b-v3"
+
+    assert demo._should_use_parakeet_asr() is True
+    assert demo._resolved_asr_backend_name() == "parakeet"
+
+
+def test_preload_models_loads_tts_denoiser_and_sensevoice_on_auto():
     class FakeCoreModel:
         def _get_or_load_denoiser(self):
             calls.append("denoiser")
@@ -137,7 +147,7 @@ def test_preload_models_loads_tts_denoiser_parakeet_and_sensevoice_fallback_on_c
 
     demo.preload_models()
 
-    assert calls == ["tts", "denoiser", "parakeet", "sensevoice"]
+    assert calls == ["tts", "denoiser", "sensevoice"]
 
 
 def test_get_or_load_asr_model_serializes_concurrent_loads(monkeypatch):
@@ -220,7 +230,7 @@ def test_prompt_wav_recognition_reports_progress_and_uses_parakeet(monkeypatch):
     progress_events = []
     calls = []
     demo = app.VoxCPMDemo.__new__(app.VoxCPMDemo)
-    demo.asr_backend = "auto"
+    demo.asr_backend = "parakeet"
     demo.device = "cuda"
     demo.parakeet_model_id = "models/nvidia__parakeet-tdt-0.6b-v3"
 
