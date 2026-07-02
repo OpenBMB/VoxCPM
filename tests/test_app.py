@@ -3,6 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import soundfile as sf
+import threading
+import time
 
 import app
 
@@ -136,6 +138,101 @@ def test_preload_models_uses_parakeet_on_cuda():
     demo.preload_models()
 
     assert calls == ["tts", "parakeet"]
+
+
+def test_get_or_load_asr_model_serializes_concurrent_loads(monkeypatch):
+    load_count = 0
+    load_count_lock = threading.Lock()
+
+    class FakeAutoModel:
+        def __init__(self, **kwargs):
+            nonlocal load_count
+            with load_count_lock:
+                load_count += 1
+            time.sleep(0.05)
+
+    monkeypatch.setattr(app, "AutoModel", FakeAutoModel)
+
+    demo = app.VoxCPMDemo.__new__(app.VoxCPMDemo)
+    demo.asr_model = None
+    demo.asr_model_id = "fake/asr"
+    demo.asr_device = "cpu"
+
+    results = []
+    errors = []
+
+    def load_model():
+        try:
+            results.append(demo.get_or_load_asr_model())
+        except Exception as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=load_model) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert errors == []
+    assert load_count == 1
+    assert len(results) == len(threads)
+    assert all(result is results[0] for result in results)
+
+
+def test_run_demo_launches_local_browser_without_blocking_on_preload(monkeypatch):
+    events = []
+    captured_thread = {}
+    launch_kwargs = {}
+
+    class FakeDemo:
+        def __init__(self, model_id, device, asr_backend):
+            events.append(("demo", model_id, device, asr_backend))
+
+        def preload_models(self, **kwargs):
+            events.append(("preload", kwargs))
+
+    class FakeQueuedInterface:
+        def launch(self, **kwargs):
+            events.append("launch")
+            launch_kwargs.update(kwargs)
+
+    class FakeInterface:
+        def queue(self, **kwargs):
+            events.append(("queue", kwargs))
+            return FakeQueuedInterface()
+
+    class FakeThread:
+        def __init__(self, target, name, daemon):
+            captured_thread["target"] = target
+            captured_thread["name"] = name
+            captured_thread["daemon"] = daemon
+
+        def start(self):
+            events.append("thread_started")
+
+    monkeypatch.setattr(app, "VoxCPMDemo", FakeDemo)
+    monkeypatch.setattr(app, "create_demo_interface", lambda demo: FakeInterface())
+    monkeypatch.setattr(app.threading, "Thread", FakeThread)
+
+    app.run_demo()
+
+    assert events == [
+        ("demo", "openbmb/VoxCPM2", "auto", "auto"),
+        "thread_started",
+        ("queue", {"max_size": 10, "default_concurrency_limit": 1}),
+        "launch",
+    ]
+    assert captured_thread["name"] == "voxcpm-model-preload"
+    assert captured_thread["daemon"] is True
+    assert launch_kwargs["server_name"] == "127.0.0.1"
+    assert launch_kwargs["server_port"] == 8808
+    assert launch_kwargs["inbrowser"] is True
+
+    captured_thread["target"]()
+    assert events[-1] == (
+        "preload",
+        {"preload_asr": True, "preload_tts": True, "preload_denoiser": False},
+    )
 
 
 def test_prompt_wav_recognition_reports_progress_and_uses_parakeet(monkeypatch):

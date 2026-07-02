@@ -4,6 +4,7 @@ import sys
 import logging
 import random
 import tempfile
+import threading
 import numpy as np
 import gradio as gr
 from typing import Callable, Optional, Tuple
@@ -359,10 +360,20 @@ class VoxCPMDemo:
         self.asr_model: Optional[AutoModel] = None
         self.parakeet_processor = None
         self.parakeet_model = None
+        self._voxcpm_load_lock = threading.RLock()
+        self._asr_load_lock = threading.RLock()
+        self._parakeet_load_lock = threading.RLock()
         logger.info("ASR backend: %s", self._resolved_asr_backend_name())
 
         self.voxcpm_model: Optional[voxcpm.VoxCPM] = None
         self._model_id = model_id
+
+    def _get_load_lock(self, attr_name: str):
+        lock = getattr(self, attr_name, None)
+        if lock is None:
+            lock = threading.RLock()
+            setattr(self, attr_name, lock)
+        return lock
 
     def asr_status_text(self) -> str:
         backend = self._resolved_asr_backend_name()
@@ -379,7 +390,7 @@ class VoxCPMDemo:
     def preload_models(
         self, *, preload_asr: bool = True, preload_tts: bool = True, preload_denoiser: bool = False
     ) -> None:
-        logger.info("Preloading models before launching the web UI...")
+        logger.info("Preloading models...")
         if preload_tts:
             logger.info("Preloading VoxCPM TTS model...")
             current_model = self.get_or_load_voxcpm()
@@ -393,33 +404,39 @@ class VoxCPMDemo:
             else:
                 logger.info("Preloading SenseVoice ASR model (language=auto)...")
                 self.get_or_load_asr_model()
-        logger.info("Preload complete. Launching web UI.")
+        logger.info("Preload complete.")
 
     def get_or_load_voxcpm(self) -> voxcpm.VoxCPM:
         if self.voxcpm_model is not None:
             return self.voxcpm_model
-        logger.info(f"Loading model: {self._model_id}")
-        self.voxcpm_model = voxcpm.VoxCPM.from_pretrained(
-            self._model_id,
-            zipenhancer_model_id=self.zipenhancer_model_id,
-            optimize=self.optimize,
-            device=self.device,
-        )
-        logger.info("Model loaded successfully.")
-        return self.voxcpm_model
+        with self._get_load_lock("_voxcpm_load_lock"):
+            if self.voxcpm_model is not None:
+                return self.voxcpm_model
+            logger.info(f"Loading model: {self._model_id}")
+            self.voxcpm_model = voxcpm.VoxCPM.from_pretrained(
+                self._model_id,
+                zipenhancer_model_id=self.zipenhancer_model_id,
+                optimize=self.optimize,
+                device=self.device,
+            )
+            logger.info("Model loaded successfully.")
+            return self.voxcpm_model
 
     def get_or_load_asr_model(self) -> AutoModel:
         if self.asr_model is not None:
             return self.asr_model
-        logger.info(f"Loading ASR model: {self.asr_model_id} on device: {self.asr_device}")
-        self.asr_model = AutoModel(
-            model=self.asr_model_id,
-            disable_update=True,
-            log_level="DEBUG",
-            device=self.asr_device,
-        )
-        logger.info("ASR model loaded successfully.")
-        return self.asr_model
+        with self._get_load_lock("_asr_load_lock"):
+            if self.asr_model is not None:
+                return self.asr_model
+            logger.info(f"Loading ASR model: {self.asr_model_id} on device: {self.asr_device}")
+            self.asr_model = AutoModel(
+                model=self.asr_model_id,
+                disable_update=True,
+                log_level="DEBUG",
+                device=self.asr_device,
+            )
+            logger.info("ASR model loaded successfully.")
+            return self.asr_model
 
     def _should_use_parakeet_asr(self) -> bool:
         if self.asr_backend == "sensevoice":
@@ -436,31 +453,34 @@ class VoxCPMDemo:
     def get_or_load_parakeet_asr_model(self):
         if self.parakeet_processor is not None and self.parakeet_model is not None:
             return self.parakeet_processor, self.parakeet_model
-        if self.parakeet_model_id is None:
-            raise RuntimeError(
-                "NVIDIA Parakeet ASR is not installed locally. Run install.bat to pre-download it, "
-                "or start app.py with --asr-backend sensevoice."
-            )
-        try:
-            import torch
-            from transformers import AutoModelForTDT, AutoProcessor
-        except ImportError as exc:
-            raise RuntimeError(
-                "NVIDIA Parakeet ASR requires a Transformers build with AutoModelForTDT support."
-            ) from exc
+        with self._get_load_lock("_parakeet_load_lock"):
+            if self.parakeet_processor is not None and self.parakeet_model is not None:
+                return self.parakeet_processor, self.parakeet_model
+            if self.parakeet_model_id is None:
+                raise RuntimeError(
+                    "NVIDIA Parakeet ASR is not installed locally. Run install.bat to pre-download it, "
+                    "or start app.py with --asr-backend sensevoice."
+                )
+            try:
+                import torch
+                from transformers import AutoModelForTDT, AutoProcessor
+            except ImportError as exc:
+                raise RuntimeError(
+                    "NVIDIA Parakeet ASR requires a Transformers build with AutoModelForTDT support."
+                ) from exc
 
-        target_device = "cuda" if self.device.startswith("cuda") else "cpu"
-        logger.info("Loading Parakeet ASR model: %s on device: %s", self.parakeet_model_id, target_device)
-        self.parakeet_processor = AutoProcessor.from_pretrained(self.parakeet_model_id, local_files_only=True)
-        self.parakeet_model = AutoModelForTDT.from_pretrained(
-            self.parakeet_model_id,
-            dtype="auto",
-            local_files_only=True,
-        )
-        self.parakeet_model.to(target_device)
-        self.parakeet_model.eval()
-        logger.info("Parakeet ASR model loaded successfully.")
-        return self.parakeet_processor, self.parakeet_model
+            target_device = "cuda" if self.device.startswith("cuda") else "cpu"
+            logger.info("Loading Parakeet ASR model: %s on device: %s", self.parakeet_model_id, target_device)
+            self.parakeet_processor = AutoProcessor.from_pretrained(self.parakeet_model_id, local_files_only=True)
+            self.parakeet_model = AutoModelForTDT.from_pretrained(
+                self.parakeet_model_id,
+                dtype="auto",
+                local_files_only=True,
+            )
+            self.parakeet_model.to(target_device)
+            self.parakeet_model.eval()
+            logger.info("Parakeet ASR model loaded successfully.")
+            return self.parakeet_processor, self.parakeet_model
 
     def _recognize_with_sensevoice(self, asr_audio_path: str, progress_callback: ProgressCallback = None) -> str:
         _emit_progress(progress_callback, 0.45, "Transcribing reference audio with SenseVoice, language auto, 45%")
@@ -892,8 +912,20 @@ def create_demo_interface(demo: VoxCPMDemo):
     return interface
 
 
+def _start_background_preload(demo: VoxCPMDemo, *, preload_denoiser: bool = False) -> threading.Thread:
+    def _preload() -> None:
+        try:
+            demo.preload_models(preload_asr=True, preload_tts=True, preload_denoiser=preload_denoiser)
+        except Exception:
+            logger.exception("Background model preload failed. The web UI is still available.")
+
+    thread = threading.Thread(target=_preload, name="voxcpm-model-preload", daemon=True)
+    thread.start()
+    return thread
+
+
 def run_demo(
-    server_name: str = "0.0.0.0",
+    server_name: str = "127.0.0.1",
     server_port: int = 8808,
     show_error: bool = True,
     model_id: str = "openbmb/VoxCPM2",
@@ -901,16 +933,18 @@ def run_demo(
     asr_backend: str = "auto",
     preload: bool = True,
     preload_denoiser: bool = False,
+    open_browser: bool = True,
 ):
     demo = VoxCPMDemo(model_id=model_id, device=device, asr_backend=asr_backend)
-    if preload:
-        demo.preload_models(preload_asr=True, preload_tts=True, preload_denoiser=preload_denoiser)
     interface = create_demo_interface(demo)
+    if preload:
+        _start_background_preload(demo, preload_denoiser=preload_denoiser)
+    logger.info("Launching web UI at http://%s:%s", server_name, server_port)
     interface.queue(max_size=10, default_concurrency_limit=1).launch(
         server_name=server_name,
         server_port=server_port,
         show_error=show_error,
-        inbrowser=True,
+        inbrowser=open_browser,
         i18n=I18N,
     )
 
@@ -924,6 +958,12 @@ if __name__ == "__main__":
         type=str,
         default="openbmb/VoxCPM2",
         help="Local path or HuggingFace repo ID (default: openbmb/VoxCPM2)",
+    )
+    parser.add_argument(
+        "--host",
+        type=str,
+        default="127.0.0.1",
+        help="Server host/interface (default: 127.0.0.1; use 0.0.0.0 for LAN access)",
     )
     parser.add_argument("--port", type=int, default=8808, help="Server port")
     parser.add_argument(
@@ -942,19 +982,26 @@ if __name__ == "__main__":
     parser.add_argument(
         "--no-preload",
         action="store_true",
-        help="Launch the web UI before loading TTS/ASR models.",
+        help="Disable background loading of TTS/ASR models at startup.",
+    )
+    parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Start the web UI without opening a browser window.",
     )
     parser.add_argument(
         "--preload-denoiser",
         action="store_true",
-        help="Also load ZipEnhancer before launching the web UI.",
+        help="Also load ZipEnhancer during background preload.",
     )
     args = parser.parse_args()
     run_demo(
         model_id=args.model_id,
+        server_name=args.host,
         server_port=args.port,
         device=args.device,
         asr_backend=args.asr_backend,
         preload=not args.no_preload,
         preload_denoiser=args.preload_denoiser,
+        open_browser=not args.no_browser,
     )
