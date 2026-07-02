@@ -5,24 +5,23 @@ import logging
 import random
 import tempfile
 import threading
-import numpy as np
-import gradio as gr
 from typing import Callable, Optional, Tuple
-from funasr import AutoModel
 from pathlib import Path
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-# Librosa imports Numba during Parakeet ASR setup. On Windows this can stall
-# inside Numba's cache/JIT setup before the web UI is launched.
-os.environ.setdefault("NUMBA_DISABLE_JIT", "1")
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 os.chdir(PROJECT_ROOT)
+# Librosa imports Numba during Parakeet ASR setup. Keep Numba's cache rooted in
+# the project so launching app.py from another directory cannot stall startup.
 os.environ.setdefault("NUMBA_CACHE_DIR", str(PROJECT_ROOT / ".numba_cache"))
 SRC_DIR = PROJECT_ROOT / "src"
 if SRC_DIR.exists() and str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+import numpy as np
+import gradio as gr
+from funasr import AutoModel
 import voxcpm
 from voxcpm.model.utils import resolve_runtime_device
 
@@ -448,7 +447,11 @@ class VoxCPMDemo:
             return self.asr_model
 
     def _should_use_parakeet_asr(self) -> bool:
-        return self.asr_backend == "parakeet"
+        if self.asr_backend == "sensevoice":
+            return False
+        if self.asr_backend == "parakeet":
+            return True
+        return self.device.startswith("cuda") and self.parakeet_model_id is not None
 
     def _resolved_asr_backend_name(self) -> str:
         if self._should_use_parakeet_asr():
