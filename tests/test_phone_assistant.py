@@ -35,7 +35,10 @@ def test_build_capture_payload_uses_phone_capture_contract():
     )
     assert payload["source"] == "iphone"
     assert payload["capture_type"] == "text"
-    assert payload["content"] == "Hello PCA"
+    assert payload["text"] == "Hello PCA"
+    assert payload["timestamp"]
+    assert payload["context_note"] == "Captured from VoxCPM phone assistant"
+    assert "voxcpm-phone-assistant" in payload["tags"]
     assert payload["metadata"]["assistant_reply"] == "Cloned reply"
     assert payload["metadata"]["voice_profile"] == "reddit-female"
     assert payload["metadata"]["turn_count"] == 2

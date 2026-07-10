@@ -6,6 +6,7 @@ import logging
 import os
 import sys
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -250,7 +251,10 @@ def _build_capture_payload(
     return {
         "source": "iphone",
         "capture_type": "text",
-        "content": _clean_text(user_message),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "text": _clean_text(user_message),
+        "context_note": "Captured from VoxCPM phone assistant",
+        "tags": [tag for tag in ("voxcpm-phone-assistant", _clean_text(profile_name)) if tag],
         "metadata": {
             "assistant_reply": _clean_text(assistant_reply),
             "voice_profile": _clean_text(profile_name),
