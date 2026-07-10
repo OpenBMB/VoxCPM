@@ -42,6 +42,8 @@ DEFAULT_BACKEND_URL = os.environ.get("PCA_BACKEND_URL", "").strip()
 DEFAULT_BACKEND_TOKEN = os.environ.get("PCA_BACKEND_TOKEN", "").strip()
 DEFAULT_BACKEND_CONTEXT = os.environ.get("PCA_ASSISTANT_CONTEXT", "").strip()
 DEFAULT_BACKEND_MODE = os.environ.get("PCA_BACKEND_MODE", "auto").strip().lower()
+DEFAULT_CAPTURE_URL = os.environ.get("PCA_CAPTURE_URL", "").strip()
+DEFAULT_CAPTURE_TOKEN = os.environ.get("PCA_CAPTURE_TOKEN", "").strip()
 
 APP_THEME = gr.themes.Soft(
     primary_hue="cyan",
@@ -229,6 +231,45 @@ def _extract_reply_text(payload: Any) -> str:
                 content = first.get("text")
                 if isinstance(content, str) and content.strip():
                     return content.strip()
+
+        data = payload.get("data")
+        if isinstance(data, str) and data.strip():
+            return data.strip()
+
+    return ""
+
+
+def _build_capture_payload(
+    *,
+    user_message: str,
+    assistant_reply: str,
+    history: list[tuple[str, str]],
+    profile_name: str,
+    backend_mode: str,
+) -> dict[str, Any]:
+    return {
+        "source": "iphone",
+        "capture_type": "text",
+        "content": _clean_text(user_message),
+        "metadata": {
+            "assistant_reply": _clean_text(assistant_reply),
+            "voice_profile": _clean_text(profile_name),
+            "backend_mode": _clean_text(backend_mode).lower() or "auto",
+            "turn_count": len(history) + 1,
+            "origin": "voxcpm-phone-assistant",
+        },
+    }
+
+
+def _extract_capture_receipt(payload: Any) -> str:
+    if isinstance(payload, str):
+        return payload.strip()
+
+    if isinstance(payload, dict):
+        for key in ("capture_id", "receipt", "id", "status", "message"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
 
         data = payload.get("data")
         if isinstance(data, str) and data.strip():
@@ -464,6 +505,49 @@ class PhoneAssistantRuntime:
             raise ValueError("Webhook returned an empty reply.")
         return reply
 
+    def request_capture(
+        self,
+        *,
+        capture_url: str,
+        capture_token: str,
+        user_message: str,
+        assistant_reply: str,
+        history: list[tuple[str, str]],
+        profile_name: str,
+        backend_mode: str,
+        timeout: int = 30,
+    ) -> str:
+        capture_url = _clean_text(capture_url)
+        if not capture_url:
+            raise ValueError("No capture URL configured.")
+
+        payload = _build_capture_payload(
+            user_message=user_message,
+            assistant_reply=assistant_reply,
+            history=history,
+            profile_name=profile_name,
+            backend_mode=backend_mode,
+        )
+
+        headers = {"Content-Type": "application/json"}
+        if capture_token:
+            headers["Authorization"] = f"Bearer {capture_token.strip()}"
+
+        response = requests.post(capture_url, json=payload, headers=headers, timeout=timeout)
+        response.raise_for_status()
+
+        receipt = ""
+        content_type = response.headers.get("content-type", "")
+        if "application/json" in content_type.lower():
+            try:
+                receipt = _extract_capture_receipt(response.json())
+            except Exception:
+                receipt = response.text.strip()
+        else:
+            receipt = response.text.strip()
+
+        return _clean_text(receipt)
+
 
 def _history_to_chatbot(history: list[tuple[str, str]]) -> list[tuple[str, str]]:
     return _format_history(history)
@@ -475,6 +559,8 @@ def build_interface(runtime: PhoneAssistantRuntime, default_profile_data: dict[s
     backend_token_default = _clean_text(os.environ.get("PCA_BACKEND_TOKEN", DEFAULT_BACKEND_TOKEN))
     backend_context_default = _clean_text(os.environ.get("PCA_ASSISTANT_CONTEXT", DEFAULT_BACKEND_CONTEXT))
     backend_mode_default = _clean_text(os.environ.get("PCA_BACKEND_MODE", DEFAULT_BACKEND_MODE)).lower() or "auto"
+    capture_url_default = _clean_text(os.environ.get("PCA_CAPTURE_URL", DEFAULT_CAPTURE_URL))
+    capture_token_default = _clean_text(os.environ.get("PCA_CAPTURE_TOKEN", DEFAULT_CAPTURE_TOKEN))
     if backend_mode_default not in {"auto", "openai", "custom"}:
         backend_mode_default = "auto"
 
@@ -549,6 +635,8 @@ def build_interface(runtime: PhoneAssistantRuntime, default_profile_data: dict[s
         assistant_reply: str,
         backend_url: str,
         backend_token: str,
+        capture_url: str,
+        capture_token: str,
         assistant_context: str,
         backend_mode: str,
         reference_audio: Optional[str],
@@ -590,6 +678,25 @@ def build_interface(runtime: PhoneAssistantRuntime, default_profile_data: dict[s
             if not assistant_reply:
                 raise ValueError("Type the assistant reply, or configure a backend URL.")
 
+        capture_status = ""
+        if capture_url.strip():
+            try:
+                capture_receipt = runtime.request_capture(
+                    capture_url=capture_url,
+                    capture_token=capture_token,
+                    user_message=user_text_clean,
+                    assistant_reply=assistant_reply,
+                    history=history,
+                    profile_name=_clean_text(profile_data.get("name", "default")) or "default",
+                    backend_mode=backend_mode,
+                )
+                capture_status = "Capture staged in PCA."
+                if capture_receipt:
+                    capture_status = f"Capture staged in PCA ({capture_receipt})."
+            except Exception as exc:
+                logger.warning("Capture staging failed: %s", exc)
+                capture_status = f"Capture staging failed: {exc}"
+
         reference_audio, reference_transcript, control_text = _merge_profile_inputs(
             profile_data,
             reference_audio,
@@ -616,6 +723,8 @@ def build_interface(runtime: PhoneAssistantRuntime, default_profile_data: dict[s
         status = "Generated cloned speech."
         if reference_audio and transcript:
             status = "Generated cloned speech with transcript-guided cloning."
+        if capture_status:
+            status = f"{status} {capture_status}"
 
         return (
             history,
@@ -764,6 +873,16 @@ def build_interface(runtime: PhoneAssistantRuntime, default_profile_data: dict[s
                             value=backend_token_default,
                             placeholder="Optional bearer token.",
                         )
+                        capture_webhook_url = gr.Textbox(
+                            label="PCA capture URL",
+                            value=capture_url_default,
+                            placeholder="Optional capture webhook URL for staging the phone message in PCA.",
+                        )
+                        capture_webhook_token = gr.Textbox(
+                            label="PCA capture token",
+                            value=capture_token_default,
+                            placeholder="Optional bearer token for the capture webhook.",
+                        )
                         assistant_context = gr.Textbox(
                             label="Assistant context",
                             value=backend_context_default,
@@ -811,6 +930,8 @@ def build_interface(runtime: PhoneAssistantRuntime, default_profile_data: dict[s
 
                         Custom mode sends `{"message": "...", "history": [...], "assistant_context": "..."}`.
 
+                        If a PCA capture URL is configured, the phone message is also staged with `source: iphone`, `capture_type: text`, and metadata that includes the assistant reply.
+
                         The response can be plain text or JSON with `reply`, `text`, `content`, or OpenAI-style `choices[0].message.content`.
                         """
                     )
@@ -823,6 +944,8 @@ def build_interface(runtime: PhoneAssistantRuntime, default_profile_data: dict[s
                     assistant_reply,
                     assistant_webhook_url,
                     assistant_webhook_token,
+                    capture_webhook_url,
+                    capture_webhook_token,
                     assistant_context,
                     backend_mode,
                     reference_audio,
@@ -926,6 +1049,8 @@ def launch(
     default_profile_name: str = "reddit-female",
     backend_url: str = DEFAULT_BACKEND_URL,
     backend_token: str = DEFAULT_BACKEND_TOKEN,
+    capture_url: str = DEFAULT_CAPTURE_URL,
+    capture_token: str = DEFAULT_CAPTURE_TOKEN,
     backend_context: str = DEFAULT_BACKEND_CONTEXT,
     backend_mode: str = DEFAULT_BACKEND_MODE if DEFAULT_BACKEND_MODE in {"auto", "openai", "custom"} else "auto",
 ):
@@ -947,6 +1072,10 @@ def launch(
         os.environ["PCA_BACKEND_URL"] = backend_url
     if _clean_text(backend_token):
         os.environ["PCA_BACKEND_TOKEN"] = backend_token
+    if _clean_text(capture_url):
+        os.environ["PCA_CAPTURE_URL"] = capture_url
+    if _clean_text(capture_token):
+        os.environ["PCA_CAPTURE_TOKEN"] = capture_token
     if _clean_text(backend_context):
         os.environ["PCA_ASSISTANT_CONTEXT"] = backend_context
     if _clean_text(backend_mode):
@@ -974,6 +1103,8 @@ def main():
     parser.add_argument("--default-profile-name", type=str, default="reddit-female")
     parser.add_argument("--backend-url", type=str, default=DEFAULT_BACKEND_URL)
     parser.add_argument("--backend-token", type=str, default=DEFAULT_BACKEND_TOKEN)
+    parser.add_argument("--capture-url", type=str, default=DEFAULT_CAPTURE_URL)
+    parser.add_argument("--capture-token", type=str, default=DEFAULT_CAPTURE_TOKEN)
     parser.add_argument("--backend-context", type=str, default=DEFAULT_BACKEND_CONTEXT)
     parser.add_argument(
         "--backend-mode",
@@ -995,6 +1126,8 @@ def main():
         default_profile_name=args.default_profile_name,
         backend_url=args.backend_url,
         backend_token=args.backend_token,
+        capture_url=args.capture_url,
+        capture_token=args.capture_token,
         backend_context=args.backend_context,
         backend_mode=args.backend_mode,
     )

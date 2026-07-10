@@ -1,7 +1,9 @@
 from voxcpm.phone_assistant import (
     _build_backend_messages,
+    _build_capture_payload,
     _build_final_text,
     _extract_reply_text,
+    _extract_capture_receipt,
     _profile_path,
 )
 
@@ -21,6 +23,26 @@ def test_extract_reply_text_supports_plain_reply_field():
 def test_extract_reply_text_supports_openai_style_response():
     payload = {"choices": [{"message": {"content": "  assistant reply  "}}]}
     assert _extract_reply_text(payload) == "assistant reply"
+
+
+def test_build_capture_payload_uses_phone_capture_contract():
+    payload = _build_capture_payload(
+        user_message="Hello PCA",
+        assistant_reply="Cloned reply",
+        history=[("u1", "a1")],
+        profile_name="reddit-female",
+        backend_mode="custom",
+    )
+    assert payload["source"] == "iphone"
+    assert payload["capture_type"] == "text"
+    assert payload["content"] == "Hello PCA"
+    assert payload["metadata"]["assistant_reply"] == "Cloned reply"
+    assert payload["metadata"]["voice_profile"] == "reddit-female"
+    assert payload["metadata"]["turn_count"] == 2
+
+
+def test_extract_capture_receipt_supports_capture_id():
+    assert _extract_capture_receipt({"capture_id": "cap_123"}) == "cap_123"
 
 
 def test_profile_path_sanitizes_name():
