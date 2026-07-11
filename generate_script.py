@@ -1,8 +1,9 @@
-from voxcpm import VoxCPM
 import soundfile as sf
 import numpy as np
 import os
 import re
+
+from voxcpm_client import DEFAULT_SERVER_URL, VoxCPMServerError, check_server, generate_wav_bytes
 
 # --- Configura aquí ---
 SCRIPT_FILE   = r"C:\Users\jonhy\Desktop\script.txt"
@@ -10,6 +11,8 @@ REFERENCE_WAV = r"C:\Users\jonhy\Desktop\audio-40s.wav"
 OUTPUT_DIR    = r"C:\Users\jonhy\Desktop\bloques"
 FINAL_OUTPUT  = r"C:\Users\jonhy\Desktop\script_completo.wav"
 SRT_OUTPUT    = r"C:\Users\jonhy\Desktop\script_completo.srt"
+MODEL_ID      = "openbmb/VoxCPM2"
+SERVER_URL    = DEFAULT_SERVER_URL
 MAX_CHARS     = 200  # ~20 segundos de habla por bloque
 CFG_VALUE    = 2.0
 INFERENCE_TIMESTEPS = 12
@@ -97,15 +100,20 @@ for parrafo in parrafos:
 
 print(f"Divididos en {len(bloques)} bloques de máx. {MAX_CHARS} caracteres (~20s c/u)\n")
 
-# 2. Cargar modelo
-print("Cargando modelo VoxCPM2...")
-model = VoxCPM.from_pretrained("openbmb/VoxCPM2", load_denoiser=False, optimize=False)
+# 2. Comprobar servidor persistente
+try:
+    health = check_server(SERVER_URL)
+    print(f"Servidor VoxCPM listo: {health.get('model_id', MODEL_ID)}")
+except VoxCPMServerError as e:
+    print(f"ERROR: {e}")
+    raise SystemExit(1)
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 fragmentos = []
 entradas_srt = []
 fallidos = []
+sample_rate = None
 
 # 3. Generar cada bloque
 for i, bloque in enumerate(bloques):
@@ -114,6 +122,7 @@ for i, bloque in enumerate(bloques):
     if os.path.exists(bloque_path):
         print(f"[{i+1}/{len(bloques)}] Ya existe: {bloque_path}")
         wav, sr = sf.read(bloque_path)
+        sample_rate = sample_rate or sr
         fragmentos.append(wav)
         entradas_srt.append((bloque, len(wav) / sr))
         continue
@@ -122,19 +131,27 @@ for i, bloque in enumerate(bloques):
     print(f"  -> {bloque[:90]}{'...' if len(bloque) > 90 else ''}")
 
     try:
-        wav = model.generate(
-            text=bloque,
-            prompt_wav_path=REFERENCE_WAV,
-            reference_wav_path=REFERENCE_WAV,
-            prompt_text=PROMPT_TEXT,
-            cfg_value=CFG_VALUE,
-            inference_timesteps=INFERENCE_TIMESTEPS,
-            normalize=NORMALIZE,
-            denoise=False,
+        wav_bytes = generate_wav_bytes(
+            {
+                "text": bloque,
+                "model_id": MODEL_ID,
+                "prompt_text": PROMPT_TEXT,
+                "prompt_wav_path": REFERENCE_WAV,
+                "reference_wav_path": REFERENCE_WAV,
+                "cfg_value": CFG_VALUE,
+                "inference_timesteps": INFERENCE_TIMESTEPS,
+                "normalize": NORMALIZE,
+                "denoise": False,
+                "trim_silence_vad": False,
+            },
+            SERVER_URL,
         )
-        sf.write(bloque_path, wav, model.tts_model.sample_rate)
+        with open(bloque_path, "wb") as f:
+            f.write(wav_bytes)
+        wav, sr = sf.read(bloque_path)
+        sample_rate = sample_rate or sr
         fragmentos.append(wav)
-        entradas_srt.append((bloque, len(wav) / model.tts_model.sample_rate))
+        entradas_srt.append((bloque, len(wav) / sr))
         print(f"  OK Guardado: {bloque_path}")
     except Exception as e:
         print(f"  ERROR en bloque {i+1}: {e}")
@@ -145,8 +162,7 @@ for i, bloque in enumerate(bloques):
 if fragmentos:
     print(f"\nConcatenando {len(fragmentos)} bloques...")
     audio_completo = np.concatenate(fragmentos)
-    sr = model.tts_model.sample_rate
-    sf.write(FINAL_OUTPUT, audio_completo, sr)
+    sf.write(FINAL_OUTPUT, audio_completo, sample_rate)
     print(f"OK Audio completo: {FINAL_OUTPUT}")
     entradas = generar_srt(entradas_srt, SRT_OUTPUT)
     print(f"OK SRT generado con {entradas} entradas: {SRT_OUTPUT}")

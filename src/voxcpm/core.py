@@ -2,6 +2,7 @@ import os
 import sys
 import re
 import json
+import hashlib
 import tempfile
 import numpy as np
 from typing import Generator, Optional
@@ -44,6 +45,7 @@ class VoxCPM:
             f"voxcpm_model_path: {voxcpm_model_path}, zipenhancer_model_path: {zipenhancer_model_path}, enable_denoiser: {enable_denoiser}",
             file=sys.stderr,
         )
+        self.voxcpm_model_path = voxcpm_model_path
 
         # If lora_weights_path is provided but no lora_config, load the saved
         # lora_config.json (so r/alpha match the checkpoint); else use a default.
@@ -180,6 +182,238 @@ class VoxCPM:
     def generate_streaming(self, *args, **kwargs) -> Generator[np.ndarray, None, None]:
         return self._generate(*args, streaming=True, **kwargs)
 
+    def _validate_prompt_inputs(
+        self,
+        prompt_wav_path: str = None,
+        prompt_text: str = None,
+        reference_wav_path: str = None,
+    ):
+        if prompt_wav_path is not None:
+            if not os.path.exists(prompt_wav_path):
+                raise FileNotFoundError(f"prompt_wav_path does not exist: {prompt_wav_path}")
+
+        if reference_wav_path is not None:
+            if not os.path.exists(reference_wav_path):
+                raise FileNotFoundError(f"reference_wav_path does not exist: {reference_wav_path}")
+
+        if (prompt_wav_path is None) != (prompt_text is None):
+            raise ValueError("prompt_wav_path and prompt_text must both be provided or both be None")
+
+        is_v2 = isinstance(self.tts_model, VoxCPM2Model)
+        if reference_wav_path is not None and not is_v2:
+            raise ValueError("reference_wav_path is only supported with VoxCPM2 models")
+
+        return is_v2
+
+    @staticmethod
+    def _normalize_target_text(text: str) -> str:
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError("target text must be a non-empty string")
+        text = text.replace("\n", " ")
+        return re.sub(r"\s+", " ", text)
+
+    @staticmethod
+    def _hash_file(path: str) -> str:
+        digest = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    @classmethod
+    def _file_cache_metadata(cls, path: str) -> dict:
+        if path is None:
+            return None
+        stat = os.stat(path)
+        return {
+            "path": os.path.abspath(path),
+            "size": stat.st_size,
+            "mtime_ns": stat.st_mtime_ns,
+            "sha256": cls._hash_file(path),
+        }
+
+    @staticmethod
+    def _prompt_cache_to_cpu(value):
+        if hasattr(value, "detach") and hasattr(value, "cpu"):
+            return value.detach().cpu()
+        if isinstance(value, dict):
+            return {key: VoxCPM._prompt_cache_to_cpu(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [VoxCPM._prompt_cache_to_cpu(item) for item in value]
+        if isinstance(value, tuple):
+            return tuple(VoxCPM._prompt_cache_to_cpu(item) for item in value)
+        return value
+
+    def _build_prompt_cache_metadata(
+        self,
+        prompt_text: str = None,
+        prompt_wav_path: str = None,
+        reference_wav_path: str = None,
+        model_id: str = None,
+        trim_silence_vad: bool = False,
+        denoise: bool = False,
+    ) -> dict:
+        has_prompt = prompt_wav_path is not None
+        has_reference = reference_wav_path is not None
+        if has_prompt and has_reference:
+            mode = "ref_continuation"
+        elif has_reference:
+            mode = "reference"
+        elif has_prompt:
+            mode = "continuation"
+        else:
+            mode = "zero_shot"
+
+        return {
+            "version": 1,
+            "model_id": model_id or self.voxcpm_model_path,
+            "model_path": os.path.abspath(self.voxcpm_model_path),
+            "mode": mode,
+            "prompt_text": prompt_text,
+            "prompt_wav": self._file_cache_metadata(prompt_wav_path),
+            "reference_wav": self._file_cache_metadata(reference_wav_path),
+            "trim_silence_vad": trim_silence_vad,
+            "denoise": denoise,
+        }
+
+    def build_prompt_cache(
+        self,
+        prompt_text: str = None,
+        prompt_wav_path: str = None,
+        reference_wav_path: str = None,
+        denoise: bool = False,
+        trim_silence_vad: bool = False,
+    ) -> dict:
+        """Encode prompt/reference audio once for reuse across generations."""
+        is_v2 = self._validate_prompt_inputs(
+            prompt_wav_path=prompt_wav_path,
+            prompt_text=prompt_text,
+            reference_wav_path=reference_wav_path,
+        )
+        if prompt_wav_path is None and reference_wav_path is None:
+            raise ValueError("At least one of prompt_wav_path or reference_wav_path must be provided")
+
+        temp_files = []
+        try:
+            actual_prompt_path = prompt_wav_path
+            actual_ref_path = reference_wav_path
+
+            if denoise and self.denoiser is not None:
+                if prompt_wav_path is not None:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+                        temp_files.append(tmp.name)
+                    self.denoiser.enhance(prompt_wav_path, output_path=temp_files[-1])
+                    actual_prompt_path = temp_files[-1]
+                if reference_wav_path is not None:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+                        temp_files.append(tmp.name)
+                    self.denoiser.enhance(reference_wav_path, output_path=temp_files[-1])
+                    actual_ref_path = temp_files[-1]
+
+            if is_v2:
+                prompt_cache = self.tts_model.build_prompt_cache(
+                    prompt_text=prompt_text,
+                    prompt_wav_path=actual_prompt_path,
+                    reference_wav_path=actual_ref_path,
+                    trim_silence_vad=trim_silence_vad,
+                )
+            else:
+                prompt_cache = self.tts_model.build_prompt_cache(
+                    prompt_text=prompt_text,
+                    prompt_wav_path=actual_prompt_path,
+                )
+            return self._prompt_cache_to_cpu(prompt_cache)
+        finally:
+            for tmp_path in temp_files:
+                if tmp_path and os.path.exists(tmp_path):
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
+
+    def load_or_build_prompt_cache(
+        self,
+        cache_path: str,
+        prompt_text: str = None,
+        prompt_wav_path: str = None,
+        reference_wav_path: str = None,
+        model_id: str = None,
+        denoise: bool = False,
+        trim_silence_vad: bool = False,
+    ) -> dict:
+        """Load a disk prompt cache when metadata matches, otherwise rebuild it."""
+        import torch
+
+        expected_metadata = self._build_prompt_cache_metadata(
+            prompt_text=prompt_text,
+            prompt_wav_path=prompt_wav_path,
+            reference_wav_path=reference_wav_path,
+            model_id=model_id,
+            trim_silence_vad=trim_silence_vad,
+            denoise=denoise,
+        )
+
+        if os.path.exists(cache_path):
+            try:
+                payload = torch.load(cache_path, map_location="cpu")
+                if payload.get("metadata") == expected_metadata and "prompt_cache" in payload:
+                    print(f"Usando cache de voz: {cache_path}")
+                    return payload["prompt_cache"]
+                print(f"Cache de voz desactualizada, reconstruyendo: {cache_path}")
+            except Exception as exc:
+                print(f"No se pudo leer la cache de voz ({exc}), reconstruyendo: {cache_path}")
+
+        prompt_cache = self.build_prompt_cache(
+            prompt_text=prompt_text,
+            prompt_wav_path=prompt_wav_path,
+            reference_wav_path=reference_wav_path,
+            denoise=denoise,
+            trim_silence_vad=trim_silence_vad,
+        )
+        os.makedirs(os.path.dirname(os.path.abspath(cache_path)), exist_ok=True)
+        torch.save({"metadata": expected_metadata, "prompt_cache": prompt_cache}, cache_path)
+        print(f"Cache de voz guardada: {cache_path}")
+        return prompt_cache
+
+    def generate_from_prompt_cache(
+        self,
+        text: str,
+        prompt_cache: dict,
+        cfg_value: float = 2.0,
+        inference_timesteps: int = 10,
+        min_len: int = 2,
+        max_len: int = 4096,
+        normalize: bool = False,
+        retry_badcase: bool = True,
+        retry_badcase_max_times: int = 3,
+        retry_badcase_ratio_threshold: float = 6.0,
+        seed: Optional[int] = None,
+    ) -> np.ndarray:
+        """Synthesize speech using a prompt cache created by build_prompt_cache."""
+        text = self._normalize_target_text(text)
+        if normalize:
+            if self.text_normalizer is None:
+                from .utils.text_normalize import TextNormalizer
+
+                self.text_normalizer = TextNormalizer()
+            text = self.text_normalizer.normalize(text)
+
+        generate_result = self.tts_model._generate_with_prompt_cache(
+            target_text=text,
+            prompt_cache=prompt_cache,
+            min_len=min_len,
+            max_len=max_len,
+            inference_timesteps=inference_timesteps,
+            cfg_value=cfg_value,
+            retry_badcase=retry_badcase,
+            retry_badcase_max_times=retry_badcase_max_times,
+            retry_badcase_ratio_threshold=retry_badcase_ratio_threshold,
+            streaming=False,
+            seed=seed,
+        )
+        wav, _, _ = next_and_close(generate_result)
+        return wav.squeeze(0).cpu().numpy()
+
     def _generate(
         self,
         text: str,
@@ -225,26 +459,12 @@ class VoxCPM:
             Yields audio chunks for each generation step if ``streaming=True``,
             otherwise yields a single array containing the final audio.
         """
-        if not isinstance(text, str) or not text.strip():
-            raise ValueError("target text must be a non-empty string")
-
-        if prompt_wav_path is not None:
-            if not os.path.exists(prompt_wav_path):
-                raise FileNotFoundError(f"prompt_wav_path does not exist: {prompt_wav_path}")
-
-        if reference_wav_path is not None:
-            if not os.path.exists(reference_wav_path):
-                raise FileNotFoundError(f"reference_wav_path does not exist: {reference_wav_path}")
-
-        if (prompt_wav_path is None) != (prompt_text is None):
-            raise ValueError("prompt_wav_path and prompt_text must both be provided or both be None")
-
-        is_v2 = isinstance(self.tts_model, VoxCPM2Model)
-        if reference_wav_path is not None and not is_v2:
-            raise ValueError("reference_wav_path is only supported with VoxCPM2 models")
-
-        text = text.replace("\n", " ")
-        text = re.sub(r"\s+", " ", text)
+        is_v2 = self._validate_prompt_inputs(
+            prompt_wav_path=prompt_wav_path,
+            prompt_text=prompt_text,
+            reference_wav_path=reference_wav_path,
+        )
+        text = self._normalize_target_text(text)
         temp_files = []
 
         try:

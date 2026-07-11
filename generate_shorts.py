@@ -1,8 +1,8 @@
-from voxcpm import VoxCPM
 import soundfile as sf
 import numpy as np
 import os
 import re
+from voxcpm_client import DEFAULT_SERVER_URL, VoxCPMServerError, check_server, generate_wav_bytes
 
 # --- Configura aquí ---
 SCRIPT_FILE   = r"C:\Users\jonhy\Desktop\script.txt"       # cada línea = un short
@@ -10,8 +10,13 @@ REFERENCE_WAV = r"C:\Users\jonhy\Desktop\audio-40s.wav"
 OUTPUT_DIR    = r"C:\Users\jonhy\Desktop\shorts"            # carpeta de salida
 BLOQUES_DIR   = r"C:\Users\jonhy\Desktop\shorts_bloques"    # bloques intermedios
 SRT_OUTPUT    = r"C:\Users\jonhy\Desktop\shorts.srt"
+MODEL_ID      = "openbmb/VoxCPM2"
+SERVER_URL    = DEFAULT_SERVER_URL
 
 MAX_CHARS = 200  # ~20 segundos por bloque
+CFG_VALUE = 2.0
+INFERENCE_TIMESTEPS = 12
+NORMALIZE = False
 
 PROMPT_TEXT = (
     "Fíjate nada más lo que acaba de pasar... porque esto que les voy a contar hoy no es un chisme cualquiera "
@@ -86,14 +91,17 @@ def parsear_shorts(ruta):
 shorts = parsear_shorts(SCRIPT_FILE)
 print(f"Se encontraron {len(shorts)} shorts en '{SCRIPT_FILE}'")
 
-# Carga el modelo una sola vez
-print("\nCargando modelo VoxCPM2...")
-model = VoxCPM.from_pretrained("openbmb/VoxCPM2", load_denoiser=False, optimize=False)
+# Comprueba el servidor persistente
+try:
+    health = check_server(SERVER_URL)
+    print(f"\nServidor VoxCPM listo: {health.get('model_id', MODEL_ID)}")
+except VoxCPMServerError as e:
+    print(f"\nERROR: {e}")
+    raise SystemExit(1)
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(BLOQUES_DIR, exist_ok=True)
 
-sr = model.tts_model.sample_rate
 srt_sections = []  # lista de (titulo, lista de (texto, duracion))
 
 for short_idx, texto_short in enumerate(shorts, start=1):
@@ -106,13 +114,15 @@ for short_idx, texto_short in enumerate(shorts, start=1):
 
     fragmentos = []
     textos_bloque = []
+    sample_rate = None
 
     for b_idx, bloque in enumerate(bloques, start=1):
         bloque_path = os.path.join(BLOQUES_DIR, f"short_{short_idx:02d}_bloque_{b_idx:03d}.wav")
 
         if os.path.exists(bloque_path):
             print(f"  [{b_idx}/{len(bloques)}] Ya existe, cargando...")
-            wav, _ = sf.read(bloque_path)
+            wav, sr = sf.read(bloque_path)
+            sample_rate = sample_rate or sr
             fragmentos.append(wav)
             textos_bloque.append(bloque)
             continue
@@ -121,17 +131,25 @@ for short_idx, texto_short in enumerate(shorts, start=1):
         print(f"    → {bloque[:80]}{'...' if len(bloque) > 80 else ''}")
 
         try:
-            wav = model.generate(
-                text=bloque,
-                prompt_wav_path=REFERENCE_WAV,
-                reference_wav_path=REFERENCE_WAV,
-                prompt_text=PROMPT_TEXT,
-                cfg_value=2.0,
-                inference_timesteps=12,
-                normalize=False,
-                denoise=False,
+            wav_bytes = generate_wav_bytes(
+                {
+                    "text": bloque,
+                    "model_id": MODEL_ID,
+                    "prompt_text": PROMPT_TEXT,
+                    "prompt_wav_path": REFERENCE_WAV,
+                    "reference_wav_path": REFERENCE_WAV,
+                    "cfg_value": CFG_VALUE,
+                    "inference_timesteps": INFERENCE_TIMESTEPS,
+                    "normalize": NORMALIZE,
+                    "denoise": False,
+                    "trim_silence_vad": False,
+                },
+                SERVER_URL,
             )
-            sf.write(bloque_path, wav, sr)
+            with open(bloque_path, "wb") as f:
+                f.write(wav_bytes)
+            wav, sr = sf.read(bloque_path)
+            sample_rate = sample_rate or sr
             fragmentos.append(wav)
             textos_bloque.append(bloque)
             print(f"    ✓ Guardado: {bloque_path}")
@@ -146,19 +164,19 @@ for short_idx, texto_short in enumerate(shorts, start=1):
     # Concatena los bloques del short en un solo audio
     audio_short = np.concatenate(fragmentos)
     short_path = os.path.join(OUTPUT_DIR, f"short_{short_idx}.wav")
-    sf.write(short_path, audio_short, sr)
+    sf.write(short_path, audio_short, sample_rate)
     print(f"\n  ✓ Audio guardado: {short_path}")
 
     # Acumula info para el SRT
-    srt_sections.append((f"Short {short_idx}", textos_bloque, fragmentos))
+    srt_sections.append((f"Short {short_idx}", textos_bloque, fragmentos, sample_rate))
 
 # Genera el SRT unificado
 srt_lines = []
-for titulo, textos, wavs in srt_sections:
+for titulo, textos, wavs, section_sr in srt_sections:
     srt_lines.append(f"#{titulo}\n")
     cursor = 0.0
     for idx, (texto, wav) in enumerate(zip(textos, wavs), start=1):
-        duracion = len(wav) / sr
+        duracion = len(wav) / section_sr
         inicio = segundos_a_srt(cursor)
         fin    = segundos_a_srt(cursor + duracion)
         srt_lines.append(f"{idx}\n{inicio} --> {fin}\n{texto}\n")
