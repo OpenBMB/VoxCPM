@@ -1,10 +1,16 @@
+import hashlib
+import json
 import os
 import re
+import shutil
 from dataclasses import dataclass
 from typing import Iterable
 
 import numpy as np
 import soundfile as sf
+
+CACHE_DIR_NAME = "_voxcpm_cache"
+MANIFEST_FILENAME = "voxcpm_manifest.json"
 
 
 @dataclass(frozen=True)
@@ -12,6 +18,141 @@ class AudioInfo:
     sample_rate: int
     frames: int
     duration: float
+
+
+def audio_fingerprint(path):
+    if not path:
+        return None
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return {"path": os.path.abspath(path), "missing": True}
+    return {
+        "path": os.path.abspath(path),
+        "size": stat.st_size,
+        "mtime_ns": stat.st_mtime_ns,
+    }
+
+
+def payload_cache_identity(payload):
+    return {
+        "text": payload.get("text"),
+        "model_id": payload.get("model_id"),
+        "prompt_text": payload.get("prompt_text"),
+        "prompt_wav": audio_fingerprint(payload.get("prompt_wav_path")),
+        "reference_wav": audio_fingerprint(payload.get("reference_wav_path")),
+        "cfg_value": payload.get("cfg_value"),
+        "inference_timesteps": payload.get("inference_timesteps"),
+        "normalize": payload.get("normalize"),
+        "denoise": payload.get("denoise"),
+        "trim_silence_vad": payload.get("trim_silence_vad"),
+    }
+
+
+def payload_cache_key(payload):
+    body = json.dumps(payload_cache_identity(payload), sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(body).hexdigest()
+
+
+def cache_manifest_path(output_dir):
+    return os.path.join(output_dir, MANIFEST_FILENAME)
+
+
+def cache_wav_path(output_dir, cache_key):
+    return os.path.join(output_dir, CACHE_DIR_NAME, f"{cache_key}.wav")
+
+
+def load_cache_manifest(output_dir):
+    path = cache_manifest_path(output_dir)
+    if not os.path.exists(path):
+        return {"version": 1, "entries": {}}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {"version": 1, "entries": {}}
+    data.setdefault("version", 1)
+    data.setdefault("entries", {})
+    return data
+
+
+def save_cache_manifest(output_dir, manifest):
+    ensure_dirs(output_dir)
+    with open(cache_manifest_path(output_dir), "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2, ensure_ascii=False)
+
+
+def _copy_wav(source, destination):
+    if os.path.abspath(source) == os.path.abspath(destination):
+        return
+    ensure_dirs(os.path.dirname(destination))
+    shutil.copy2(source, destination)
+
+
+def prepare_cached_wav(output_dir, block_path, payload):
+    cache_key = payload_cache_key(payload)
+    cache_path = cache_wav_path(output_dir, cache_key)
+    manifest = load_cache_manifest(output_dir)
+    entry = manifest.get("entries", {}).get(cache_key, {})
+
+    if os.path.exists(cache_path):
+        _copy_wav(cache_path, block_path)
+        return cache_key, "hash-cache"
+
+    manifest_path = entry.get("path")
+    if manifest_path and os.path.exists(manifest_path):
+        _copy_wav(manifest_path, cache_path)
+        _copy_wav(cache_path, block_path)
+        return cache_key, "manifest"
+
+    if os.path.exists(block_path):
+        # Legacy compatibility: existing index-based WAVs are trusted once,
+        # then promoted into the hash cache for future runs.
+        _copy_wav(block_path, cache_path)
+        return cache_key, "existing-path"
+
+    return cache_key, None
+
+
+def record_cached_wav(output_dir, cache_key, payload, block_path, info, metrics=None):
+    cache_path = cache_wav_path(output_dir, cache_key)
+    if os.path.exists(block_path) and not os.path.exists(cache_path):
+        _copy_wav(block_path, cache_path)
+
+    manifest = load_cache_manifest(output_dir)
+    manifest["entries"][cache_key] = {
+        "path": os.path.abspath(block_path),
+        "cache_path": os.path.abspath(cache_path),
+        "text": payload.get("text"),
+        "text_chars": len(payload.get("text") or ""),
+        "identity": payload_cache_identity(payload),
+        "sample_rate": info.sample_rate,
+        "frames": info.frames,
+        "duration": info.duration,
+        "metrics": metrics or {},
+    }
+    save_cache_manifest(output_dir, manifest)
+
+
+def audit_audio_cache(blocks, output_dir, payload_builder, block_path_builder):
+    reusable = 0
+    missing = 0
+    for index, block in enumerate(blocks, start=1):
+        payload = payload_builder(block)
+        cache_key = payload_cache_key(payload)
+        cache_path = cache_wav_path(output_dir, cache_key)
+        block_path = block_path_builder(index)
+        entry = load_cache_manifest(output_dir).get("entries", {}).get(cache_key, {})
+        manifest_path = entry.get("path")
+        if (
+            os.path.exists(cache_path)
+            or os.path.exists(block_path)
+            or (manifest_path and os.path.exists(manifest_path))
+        ):
+            reusable += 1
+        else:
+            missing += 1
+    return {"total": len(blocks), "reusable": reusable, "missing": missing}
 
 
 def split_text_blocks(text, max_chars):

@@ -6,3 +6,4 @@ voxcpm.egg-info
 ./pretrained_models/
 app_local.py
 .devswarm-temp/
+benchmark_*.json

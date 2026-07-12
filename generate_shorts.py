@@ -5,17 +5,20 @@ import traceback
 import soundfile as sf
 
 from tts_workflow import (
+    audit_audio_cache,
     build_srt_entries,
     build_voxcpm_payload,
     concatenate_wavs,
     ensure_dirs,
     get_audio_info,
     parse_structured_shorts,
+    prepare_cached_wav,
     read_wav,
+    record_cached_wav,
     split_text_blocks,
     write_wav_bytes,
 )
-from voxcpm_client import DEFAULT_SERVER_URL, VoxCPMServerError, check_server, generate_wav_bytes
+from voxcpm_client import DEFAULT_SERVER_URL, VoxCPMServerError, check_server, generate_wav_bytes_with_metrics
 
 # --- Configura aqui ---
 SCRIPT_FILE = r"C:\Users\jonhy\Desktop\script.txt"  # cada linea = un short
@@ -25,11 +28,15 @@ BLOQUES_DIR = r"C:\Users\jonhy\Desktop\shorts_bloques"  # bloques intermedios
 SRT_OUTPUT = r"C:\Users\jonhy\Desktop\shorts.srt"
 MODEL_ID = "openbmb/VoxCPM2"
 SERVER_URL = DEFAULT_SERVER_URL
+SCRIPT_ENCODING = "utf-8-sig"
+SRT_ENCODING = "utf-8"
 
 MAX_CHARS = 200  # ~20 segundos por bloque
 CFG_VALUE = 2.0
 INFERENCE_TIMESTEPS = 12
 NORMALIZE = False
+AUDIT_ONLY = False
+METRIC_KEYS = ("cache_seconds", "inference_seconds", "wav_write_seconds", "queue_seconds", "request_seconds")
 
 PROMPT_TEXT = (
     "F\u00edjate nada m\u00e1s lo que acaba de pasar... porque esto que les voy a contar hoy no es un chisme cualquiera "
@@ -45,8 +52,41 @@ PROMPT_TEXT = (
 
 def main():
     total_start = time.perf_counter()
-    shorts = parse_structured_shorts(SCRIPT_FILE)
+    shorts = parse_structured_shorts(SCRIPT_FILE, encoding=SCRIPT_ENCODING)
     print(f"Se encontraron {len(shorts)} shorts en '{SCRIPT_FILE}'")
+
+    def build_payload(block):
+        return build_voxcpm_payload(
+            text=block,
+            model_id=MODEL_ID,
+            prompt_text=PROMPT_TEXT,
+            reference_wav=REFERENCE_WAV,
+            cfg_value=CFG_VALUE,
+            inference_timesteps=INFERENCE_TIMESTEPS,
+            normalize=NORMALIZE,
+        )
+
+    def block_path_for(short_idx, block_idx):
+        return os.path.join(BLOQUES_DIR, f"short_{short_idx:02d}_bloque_{block_idx:03d}.wav")
+
+    ensure_dirs(OUTPUT_DIR, BLOQUES_DIR)
+
+    if AUDIT_ONLY:
+        total = {"total": 0, "reusable": 0, "missing": 0}
+        for short_idx, short_text in enumerate(shorts, start=1):
+            blocks = split_text_blocks(short_text, MAX_CHARS)
+            audit = audit_audio_cache(
+                blocks,
+                BLOQUES_DIR,
+                build_payload,
+                lambda block_idx, short_idx=short_idx: block_path_for(short_idx, block_idx),
+            )
+            for key in total:
+                total[key] += audit[key]
+        print(
+            "Auditoria cache: " f"{total['reusable']} reutilizables, {total['missing']} nuevos, {total['total']} total"
+        )
+        return
 
     try:
         health = check_server(SERVER_URL)
@@ -56,13 +96,13 @@ def main():
         print(f"\nERROR: {e}")
         raise SystemExit(1) from e
 
-    ensure_dirs(OUTPUT_DIR, BLOQUES_DIR)
-
     srt_sections = []
     generated_count = 0
     reused_count = 0
     failed_count = 0
     generated_seconds = 0.0
+    metric_totals = {key: 0.0 for key in METRIC_KEYS}
+    metric_count = 0
 
     for short_idx, short_text in enumerate(shorts, start=1):
         print(f"\n{'=' * 60}")
@@ -77,16 +117,22 @@ def main():
         sample_rate = None
 
         for block_idx, block in enumerate(blocks, start=1):
-            block_path = os.path.join(BLOQUES_DIR, f"short_{short_idx:02d}_bloque_{block_idx:03d}.wav")
+            block_path = block_path_for(short_idx, block_idx)
+            payload = build_payload(block)
+            cache_key, cache_source = prepare_cached_wav(BLOQUES_DIR, block_path, payload)
 
-            if os.path.exists(block_path):
+            if cache_source:
                 info = get_audio_info(block_path)
                 wav, sr = read_wav(block_path)
+                record_cached_wav(BLOQUES_DIR, cache_key, payload, block_path, info)
                 sample_rate = sample_rate or sr
                 fragments.append(wav)
                 srt_entries.append((block, info.duration))
                 reused_count += 1
-                print(f"  [{block_idx}/{len(blocks)}] Ya existe ({info.duration:.2f}s), cargando...")
+                print(
+                    f"  [{block_idx}/{len(blocks)}] Reutilizado ({cache_source}) "
+                    f"({info.duration:.2f}s), cargando..."
+                )
                 continue
 
             print(f"\n  [{block_idx}/{len(blocks)}] Generando ({len(block)} caracteres)...")
@@ -94,16 +140,8 @@ def main():
 
             try:
                 request_start = time.perf_counter()
-                wav_bytes = generate_wav_bytes(
-                    build_voxcpm_payload(
-                        text=block,
-                        model_id=MODEL_ID,
-                        prompt_text=PROMPT_TEXT,
-                        reference_wav=REFERENCE_WAV,
-                        cfg_value=CFG_VALUE,
-                        inference_timesteps=INFERENCE_TIMESTEPS,
-                        normalize=NORMALIZE,
-                    ),
+                wav_bytes, metrics = generate_wav_bytes_with_metrics(
+                    payload,
                     SERVER_URL,
                 )
                 elapsed = time.perf_counter() - request_start
@@ -114,9 +152,22 @@ def main():
                 sample_rate = sample_rate or sr
                 fragments.append(wav)
                 srt_entries.append((block, info.duration))
+                record_cached_wav(BLOQUES_DIR, cache_key, payload, block_path, info, metrics=metrics)
                 generated_count += 1
                 generated_seconds += elapsed
-                print(f"    OK Guardado: {block_path} ({info.duration:.2f}s audio, {elapsed:.2f}s generacion)")
+                if metrics:
+                    metric_count += 1
+                    for key in METRIC_KEYS:
+                        metric_totals[key] += float(metrics.get(key, 0.0))
+                    print(
+                        f"    OK Guardado: {block_path} ({info.duration:.2f}s audio, {elapsed:.2f}s local | "
+                        f"cache {metrics.get('cache_seconds', 0):.2f}s, "
+                        f"inferencia {metrics.get('inference_seconds', 0):.2f}s, "
+                        f"wav {metrics.get('wav_write_seconds', 0):.2f}s, "
+                        f"cola {metrics.get('queue_seconds', 0):.2f}s)"
+                    )
+                else:
+                    print(f"    OK Guardado: {block_path} ({info.duration:.2f}s audio, {elapsed:.2f}s generacion)")
             except Exception as e:
                 print(f"    ERROR: {e}")
                 traceback.print_exc()
@@ -137,7 +188,7 @@ def main():
         srt_lines.append(f"#{title}\n")
         srt_lines.extend(build_srt_entries(entries))
 
-    with open(SRT_OUTPUT, "w", encoding="utf-8") as f:
+    with open(SRT_OUTPUT, "w", encoding=SRT_ENCODING) as f:
         f.write("\n".join(srt_lines))
 
     total_elapsed = time.perf_counter() - total_start
@@ -149,6 +200,19 @@ def main():
         f"{generated_count} generados, {reused_count} reutilizados, "
         f"{failed_count} fallidos, {total_elapsed:.2f}s total, {avg:.2f}s promedio/bloque nuevo"
     )
+    if metric_count:
+        print(
+            "Cuellos servidor: "
+            f"cache {metric_totals['cache_seconds']:.2f}s total "
+            f"({metric_totals['cache_seconds'] / metric_count:.2f}s prom), "
+            f"inferencia {metric_totals['inference_seconds']:.2f}s total "
+            f"({metric_totals['inference_seconds'] / metric_count:.2f}s prom), "
+            f"wav {metric_totals['wav_write_seconds']:.2f}s total "
+            f"({metric_totals['wav_write_seconds'] / metric_count:.2f}s prom), "
+            f"cola {metric_totals['queue_seconds']:.2f}s total "
+            f"({metric_totals['queue_seconds'] / metric_count:.2f}s prom), "
+            f"request servidor {metric_totals['request_seconds']:.2f}s total"
+        )
 
 
 if __name__ == "__main__":
