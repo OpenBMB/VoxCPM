@@ -260,7 +260,7 @@ If you want phone microphone dictation, install the optional ASR dependency sepa
 You can also save a named voice enrollment once and reuse it later from the app's profile panel.
 By default, the assistant loads the saved `reddit-female` profile if it exists.
 To wire in your PCA backend automatically, set `PCA_BACKEND_URL` plus optional `PCA_BACKEND_TOKEN`, `PCA_ASSISTANT_CONTEXT`, and `PCA_BACKEND_MODE=auto|openai|custom` before launching.
-To stage the phone message into PCA as a capture event, also set `PCA_CAPTURE_URL` plus optional `PCA_CAPTURE_TOKEN`. The assistant sends the PCA contract fields `source: iphone`, `capture_type: text`, `timestamp`, and `text`, plus capture metadata that includes the assistant reply.
+To stage the phone message into PCA as a capture event, also set `PCA_CAPTURE_URL` plus optional `PCA_CAPTURE_TOKEN`. The assistant POSTs a PCA capture event that conforms to the PCA capture schema: `source: iphone_shortcut`, `capture_type: text`, `timestamp`, `content` (the user message), `classification`, and `provenance`. Set `PCA_CAPTURE_CLASSIFICATION` (`public|internal|confidential|restricted`, default `confidential`) to control routing sensitivity.
 
 ### 🚢 Production Deployment (Nano-vLLM)
 

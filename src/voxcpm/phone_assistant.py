@@ -46,6 +46,12 @@ DEFAULT_BACKEND_MODE = os.environ.get("PCA_BACKEND_MODE", "auto").strip().lower(
 DEFAULT_CAPTURE_URL = os.environ.get("PCA_CAPTURE_URL", "").strip()
 DEFAULT_CAPTURE_TOKEN = os.environ.get("PCA_CAPTURE_TOKEN", "").strip()
 
+CAPTURE_CLASSIFICATIONS = {"public", "internal", "confidential", "restricted"}
+_capture_classification = os.environ.get("PCA_CAPTURE_CLASSIFICATION", "confidential").strip().lower()
+DEFAULT_CAPTURE_CLASSIFICATION = (
+    _capture_classification if _capture_classification in CAPTURE_CLASSIFICATIONS else "confidential"
+)
+
 APP_THEME = gr.themes.Soft(
     primary_hue="cyan",
     secondary_hue="orange",
@@ -247,21 +253,29 @@ def _build_capture_payload(
     history: list[tuple[str, str]],
     profile_name: str,
     backend_mode: str,
+    classification: str = DEFAULT_CAPTURE_CLASSIFICATION,
 ) -> dict[str, Any]:
+    """Build a PCA capture event conforming to pca_capture_event.schema.json.
+
+    The gateway validates against that schema with additionalProperties: false,
+    so only the contract fields are emitted. `assistant_reply`, `backend_mode`
+    and turn count are not part of the capture contract and are intentionally
+    dropped — the capture records the user's phone message, not VoxCPM state.
+    """
+    classification = _clean_text(classification).lower()
+    if classification not in CAPTURE_CLASSIFICATIONS:
+        classification = "confidential"
+
     return {
-        "source": "iphone",
+        "source": "iphone_shortcut",
         "capture_type": "text",
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "text": _clean_text(user_message),
-        "context_note": "Captured from VoxCPM phone assistant",
-        "tags": [tag for tag in ("voxcpm-phone-assistant", _clean_text(profile_name)) if tag],
-        "metadata": {
-            "assistant_reply": _clean_text(assistant_reply),
-            "voice_profile": _clean_text(profile_name),
-            "backend_mode": _clean_text(backend_mode).lower() or "auto",
-            "turn_count": len(history) + 1,
-            "origin": "voxcpm-phone-assistant",
+        "content": _clean_text(user_message),
+        "classification": classification,
+        "provenance": {
+            "agent": "voxcpm-phone-assistant",
         },
+        "tags": [tag for tag in ("voxcpm-phone-assistant", _clean_text(profile_name)) if tag],
     }
 
 
@@ -737,6 +751,7 @@ def build_interface(runtime: PhoneAssistantRuntime, default_profile_data: dict[s
             reference_transcript,
             (sample_rate, wav),
             status,
+            profile_data,
         )
 
     def speak_reply(
@@ -934,7 +949,7 @@ def build_interface(runtime: PhoneAssistantRuntime, default_profile_data: dict[s
 
                         Custom mode sends `{"message": "...", "history": [...], "assistant_context": "..."}`.
 
-                        If a PCA capture URL is configured, the phone message is also staged with `source: iphone`, `capture_type: text`, and metadata that includes the assistant reply.
+                        If a PCA capture URL is configured, the phone message is also staged as a PCA capture event (`source: iphone_shortcut`, `capture_type: text`, `content`, `classification`, and `provenance`) conforming to the PCA capture schema.
 
                         The response can be plain text or JSON with `reply`, `text`, `content`, or OpenAI-style `choices[0].message.content`.
                         """
