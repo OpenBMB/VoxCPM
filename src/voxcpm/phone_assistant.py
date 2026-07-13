@@ -39,18 +39,13 @@ logging.basicConfig(
 DEFAULT_MODEL_ID = "openbmb/VoxCPM2"
 DEFAULT_ASR_MODEL_ID = "iic/SenseVoiceSmall"
 PROFILE_DIR = Path.cwd() / ".voxcpm-phone-profiles"
-DEFAULT_BACKEND_URL = os.environ.get("PCA_BACKEND_URL", "").strip()
-DEFAULT_BACKEND_TOKEN = os.environ.get("PCA_BACKEND_TOKEN", "").strip()
-DEFAULT_BACKEND_CONTEXT = os.environ.get("PCA_ASSISTANT_CONTEXT", "").strip()
-DEFAULT_BACKEND_MODE = os.environ.get("PCA_BACKEND_MODE", "auto").strip().lower()
-DEFAULT_CAPTURE_URL = os.environ.get("PCA_CAPTURE_URL", "").strip()
-DEFAULT_CAPTURE_TOKEN = os.environ.get("PCA_CAPTURE_TOKEN", "").strip()
-
-CAPTURE_CLASSIFICATIONS = {"public", "internal", "confidential", "restricted"}
-_capture_classification = os.environ.get("PCA_CAPTURE_CLASSIFICATION", "confidential").strip().lower()
-DEFAULT_CAPTURE_CLASSIFICATION = (
-    _capture_classification if _capture_classification in CAPTURE_CLASSIFICATIONS else "confidential"
-)
+DEFAULT_BACKEND_URL = os.environ.get("ASSISTANT_BACKEND_URL", "").strip()
+DEFAULT_BACKEND_TOKEN = os.environ.get("ASSISTANT_BACKEND_TOKEN", "").strip()
+DEFAULT_BACKEND_CONTEXT = os.environ.get("ASSISTANT_CONTEXT", "").strip()
+DEFAULT_BACKEND_MODE = os.environ.get("ASSISTANT_BACKEND_MODE", "auto").strip().lower()
+DEFAULT_BACKEND_MODEL = os.environ.get("ASSISTANT_BACKEND_MODEL", "assistant").strip() or "assistant"
+DEFAULT_CAPTURE_URL = os.environ.get("CAPTURE_WEBHOOK_URL", "").strip()
+DEFAULT_CAPTURE_TOKEN = os.environ.get("CAPTURE_WEBHOOK_TOKEN", "").strip()
 
 APP_THEME = gr.themes.Soft(
     primary_hue="cyan",
@@ -253,29 +248,21 @@ def _build_capture_payload(
     history: list[tuple[str, str]],
     profile_name: str,
     backend_mode: str,
-    classification: str = DEFAULT_CAPTURE_CLASSIFICATION,
 ) -> dict[str, Any]:
-    """Build a PCA capture event conforming to pca_capture_event.schema.json.
+    """Build a neutral capture event for the configured capture webhook.
 
-    The gateway validates against that schema with additionalProperties: false,
-    so only the contract fields are emitted. `assistant_reply`, `backend_mode`
-    and turn count are not part of the capture contract and are intentionally
-    dropped — the capture records the user's phone message, not VoxCPM state.
+    This is a generic, backend-agnostic shape. Mapping it onto a specific
+    downstream ingestion schema (field renames, classification, provenance,
+    validation) is the receiving webhook's responsibility, not VoxCPM's.
     """
-    classification = _clean_text(classification).lower()
-    if classification not in CAPTURE_CLASSIFICATIONS:
-        classification = "confidential"
-
     return {
-        "source": "iphone_shortcut",
-        "capture_type": "text",
+        "source": "voxcpm-phone-assistant",
+        "type": "text",
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "content": _clean_text(user_message),
-        "classification": classification,
-        "provenance": {
-            "agent": "voxcpm-phone-assistant",
-        },
-        "tags": [tag for tag in ("voxcpm-phone-assistant", _clean_text(profile_name)) if tag],
+        "message": _clean_text(user_message),
+        "reply": _clean_text(assistant_reply),
+        "profile": _clean_text(profile_name),
+        "turn": len(history) + 1,
     }
 
 
@@ -470,6 +457,7 @@ class PhoneAssistantRuntime:
         history: list[tuple[str, str]],
         assistant_context: str,
         backend_mode: str = "auto",
+        backend_model: str = DEFAULT_BACKEND_MODEL,
         timeout: int = 30,
     ) -> str:
         backend_url = _clean_text(backend_url)
@@ -483,7 +471,7 @@ class PhoneAssistantRuntime:
 
         if openai_compatible:
             payload = {
-                "model": "pca",
+                "model": _clean_text(backend_model) or "assistant",
                 "messages": _build_backend_messages(user_message, history, assistant_context),
                 "temperature": 0.4,
                 "stream": False,
@@ -573,12 +561,12 @@ def _history_to_chatbot(history: list[tuple[str, str]]) -> list[tuple[str, str]]
 
 def build_interface(runtime: PhoneAssistantRuntime, default_profile_data: dict[str, Any] | None = None):
     default_profile_data = default_profile_data or {}
-    backend_url_default = _clean_text(os.environ.get("PCA_BACKEND_URL", DEFAULT_BACKEND_URL))
-    backend_token_default = _clean_text(os.environ.get("PCA_BACKEND_TOKEN", DEFAULT_BACKEND_TOKEN))
-    backend_context_default = _clean_text(os.environ.get("PCA_ASSISTANT_CONTEXT", DEFAULT_BACKEND_CONTEXT))
-    backend_mode_default = _clean_text(os.environ.get("PCA_BACKEND_MODE", DEFAULT_BACKEND_MODE)).lower() or "auto"
-    capture_url_default = _clean_text(os.environ.get("PCA_CAPTURE_URL", DEFAULT_CAPTURE_URL))
-    capture_token_default = _clean_text(os.environ.get("PCA_CAPTURE_TOKEN", DEFAULT_CAPTURE_TOKEN))
+    backend_url_default = _clean_text(os.environ.get("ASSISTANT_BACKEND_URL", DEFAULT_BACKEND_URL))
+    backend_token_default = _clean_text(os.environ.get("ASSISTANT_BACKEND_TOKEN", DEFAULT_BACKEND_TOKEN))
+    backend_context_default = _clean_text(os.environ.get("ASSISTANT_CONTEXT", DEFAULT_BACKEND_CONTEXT))
+    backend_mode_default = _clean_text(os.environ.get("ASSISTANT_BACKEND_MODE", DEFAULT_BACKEND_MODE)).lower() or "auto"
+    capture_url_default = _clean_text(os.environ.get("CAPTURE_WEBHOOK_URL", DEFAULT_CAPTURE_URL))
+    capture_token_default = _clean_text(os.environ.get("CAPTURE_WEBHOOK_TOKEN", DEFAULT_CAPTURE_TOKEN))
     if backend_mode_default not in {"auto", "openai", "custom"}:
         backend_mode_default = "auto"
 
@@ -708,9 +696,9 @@ def build_interface(runtime: PhoneAssistantRuntime, default_profile_data: dict[s
                     profile_name=_clean_text(profile_data.get("name", "default")) or "default",
                     backend_mode=backend_mode,
                 )
-                capture_status = "Capture staged in PCA."
+                capture_status = "Capture staged."
                 if capture_receipt:
-                    capture_status = f"Capture staged in PCA ({capture_receipt})."
+                    capture_status = f"Capture staged ({capture_receipt})."
             except Exception as exc:
                 logger.warning("Capture staging failed: %s", exc)
                 capture_status = f"Capture staging failed: {exc}"
@@ -737,7 +725,7 @@ def build_interface(runtime: PhoneAssistantRuntime, default_profile_data: dict[s
         if reference_audio and not reference_transcript and transcript:
             reference_transcript = transcript
 
-        history = history + [(f"You: {user_text_clean}", f"PCA: {assistant_reply}")]
+        history = history + [(f"You: {user_text_clean}", f"Assistant: {assistant_reply}")]
         status = "Generated cloned speech."
         if reference_audio and transcript:
             status = "Generated cloned speech with transcript-guided cloning."
@@ -883,24 +871,26 @@ def build_interface(runtime: PhoneAssistantRuntime, default_profile_data: dict[s
 
                     with gr.Accordion("Advanced", open=False):
                         assistant_webhook_url = gr.Textbox(
-                            label="PCA backend URL",
+                            label="Assistant backend URL",
                             value=backend_url_default,
                             placeholder="OpenAI-compatible /v1/chat/completions or a custom webhook endpoint.",
                         )
                         assistant_webhook_token = gr.Textbox(
-                            label="PCA backend token",
+                            label="Assistant backend token",
                             value=backend_token_default,
                             placeholder="Optional bearer token.",
+                            type="password",
                         )
                         capture_webhook_url = gr.Textbox(
-                            label="PCA capture URL",
+                            label="Capture webhook URL",
                             value=capture_url_default,
-                            placeholder="Optional capture webhook URL for staging the phone message in PCA.",
+                            placeholder="Optional webhook URL for staging the phone message downstream.",
                         )
                         capture_webhook_token = gr.Textbox(
-                            label="PCA capture token",
+                            label="Capture webhook token",
                             value=capture_token_default,
                             placeholder="Optional bearer token for the capture webhook.",
+                            type="password",
                         )
                         assistant_context = gr.Textbox(
                             label="Assistant context",
@@ -945,11 +935,11 @@ def build_interface(runtime: PhoneAssistantRuntime, default_profile_data: dict[s
                         """
                         **Backend payloads**
 
-                        OpenAI-compatible mode sends `{"model":"pca","messages":[...],"temperature":0.4,"stream":false}`.
+                        OpenAI-compatible mode sends `{"model":"assistant","messages":[...],"temperature":0.4,"stream":false}` (model name is configurable).
 
                         Custom mode sends `{"message": "...", "history": [...], "assistant_context": "..."}`.
 
-                        If a PCA capture URL is configured, the phone message is also staged as a PCA capture event (`source: iphone_shortcut`, `capture_type: text`, `content`, `classification`, and `provenance`) conforming to the PCA capture schema.
+                        If a capture webhook URL is configured, the turn is also POSTed as a neutral capture event (`source`, `type`, `timestamp`, `message`, `reply`, `profile`, `turn`). Mapping it onto any downstream ingestion schema is the receiving webhook's job.
 
                         The response can be plain text or JSON with `reply`, `text`, `content`, or OpenAI-style `choices[0].message.content`.
                         """
@@ -1065,7 +1055,7 @@ def launch(
     no_denoiser: bool = False,
     optimize: bool = True,
     zipenhancer_path: Optional[str] = None,
-    default_profile_name: str = "reddit-female",
+    default_profile_name: str = "",
     backend_url: str = DEFAULT_BACKEND_URL,
     backend_token: str = DEFAULT_BACKEND_TOKEN,
     capture_url: str = DEFAULT_CAPTURE_URL,
@@ -1088,17 +1078,17 @@ def launch(
             logger.warning("Default profile not found: %s", default_profile_name)
 
     if _clean_text(backend_url):
-        os.environ["PCA_BACKEND_URL"] = backend_url
+        os.environ["ASSISTANT_BACKEND_URL"] = backend_url
     if _clean_text(backend_token):
-        os.environ["PCA_BACKEND_TOKEN"] = backend_token
+        os.environ["ASSISTANT_BACKEND_TOKEN"] = backend_token
     if _clean_text(capture_url):
-        os.environ["PCA_CAPTURE_URL"] = capture_url
+        os.environ["CAPTURE_WEBHOOK_URL"] = capture_url
     if _clean_text(capture_token):
-        os.environ["PCA_CAPTURE_TOKEN"] = capture_token
+        os.environ["CAPTURE_WEBHOOK_TOKEN"] = capture_token
     if _clean_text(backend_context):
-        os.environ["PCA_ASSISTANT_CONTEXT"] = backend_context
+        os.environ["ASSISTANT_CONTEXT"] = backend_context
     if _clean_text(backend_mode):
-        os.environ["PCA_BACKEND_MODE"] = backend_mode
+        os.environ["ASSISTANT_BACKEND_MODE"] = backend_mode
 
     demo = build_interface(runtime, default_profile_data=default_profile_data)
     demo.queue(max_size=16, default_concurrency_limit=1).launch(
@@ -1119,7 +1109,7 @@ def main():
     parser.add_argument("--no-denoiser", action="store_true")
     parser.add_argument("--no-optimize", action="store_true")
     parser.add_argument("--zipenhancer-path", type=str, default=None)
-    parser.add_argument("--default-profile-name", type=str, default="reddit-female")
+    parser.add_argument("--default-profile-name", type=str, default="")
     parser.add_argument("--backend-url", type=str, default=DEFAULT_BACKEND_URL)
     parser.add_argument("--backend-token", type=str, default=DEFAULT_BACKEND_TOKEN)
     parser.add_argument("--capture-url", type=str, default=DEFAULT_CAPTURE_URL)

@@ -25,58 +25,26 @@ def test_extract_reply_text_supports_openai_style_response():
     assert _extract_reply_text(payload) == "assistant reply"
 
 
-def test_build_capture_payload_matches_pca_schema():
+def test_build_capture_payload_is_neutral_shape():
     payload = _build_capture_payload(
-        user_message="Hello PCA",
+        user_message="Hello there",
         assistant_reply="Cloned reply",
         history=[("u1", "a1")],
-        profile_name="reddit-female",
+        profile_name="my-voice",
         backend_mode="custom",
     )
-    # Required fields per schemas/pca_capture_event.schema.json.
-    assert payload["source"] == "iphone_shortcut"
-    assert payload["capture_type"] == "text"
+    # Neutral, backend-agnostic shape. Mapping onto a downstream ingestion
+    # schema is the receiving webhook's responsibility, not VoxCPM's.
+    assert payload["source"] == "voxcpm-phone-assistant"
+    assert payload["type"] == "text"
     assert payload["timestamp"]
-    assert payload["content"] == "Hello PCA"
-    assert payload["classification"] in {"public", "internal", "confidential", "restricted"}
-    assert payload["provenance"]["agent"] == "voxcpm-phone-assistant"
-    assert "voxcpm-phone-assistant" in payload["tags"]
-    # Off-contract keys rejected by the gateway (additionalProperties: false)
-    # must not be emitted.
-    assert set(payload) <= {
-        "source",
-        "capture_type",
-        "timestamp",
-        "content",
-        "classification",
-        "provenance",
-        "tags",
-    }
-    assert "text" not in payload
-    assert "metadata" not in payload
-    assert "context_note" not in payload
-
-
-def test_build_capture_payload_classification_override_validates():
-    ok = _build_capture_payload(
-        user_message="hi",
-        assistant_reply="",
-        history=[],
-        profile_name="p",
-        backend_mode="auto",
-        classification="internal",
-    )
-    assert ok["classification"] == "internal"
-
-    fallback = _build_capture_payload(
-        user_message="hi",
-        assistant_reply="",
-        history=[],
-        profile_name="p",
-        backend_mode="auto",
-        classification="bogus",
-    )
-    assert fallback["classification"] == "confidential"
+    assert payload["message"] == "Hello there"
+    assert payload["reply"] == "Cloned reply"
+    assert payload["profile"] == "my-voice"
+    assert payload["turn"] == 2
+    # No downstream-specific coupling leaks into the neutral payload.
+    assert "classification" not in payload
+    assert "provenance" not in payload
 
 
 def test_extract_capture_receipt_supports_capture_id():

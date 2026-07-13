@@ -257,10 +257,18 @@ voxcpm-assistant --port 8809
 
 Use a clean reference sample plus an exact transcript for the highest-quality cloned voice. If you connect a webhook, the app POSTs the user message and conversation history and expects a reply in plain text or in a `reply` field.
 If you want phone microphone dictation, install the optional ASR dependency separately with `pip install funasr`.
-You can also save a named voice enrollment once and reuse it later from the app's profile panel.
-By default, the assistant loads the saved `reddit-female` profile if it exists.
-To wire in your PCA backend automatically, set `PCA_BACKEND_URL` plus optional `PCA_BACKEND_TOKEN`, `PCA_ASSISTANT_CONTEXT`, and `PCA_BACKEND_MODE=auto|openai|custom` before launching.
-To stage the phone message into PCA as a capture event, also set `PCA_CAPTURE_URL` plus optional `PCA_CAPTURE_TOKEN`. The assistant POSTs a PCA capture event that conforms to the PCA capture schema: `source: iphone_shortcut`, `capture_type: text`, `timestamp`, `content` (the user message), `classification`, and `provenance`. Set `PCA_CAPTURE_CLASSIFICATION` (`public|internal|confidential|restricted`, default `confidential`) to control routing sensitivity.
+You can also save a named voice enrollment once and reuse it later from the app's profile panel. Pass `--default-profile-name <name>` to auto-load a saved profile on start.
+
+To wire in an assistant backend automatically, set `ASSISTANT_BACKEND_URL` plus optional `ASSISTANT_BACKEND_TOKEN`, `ASSISTANT_CONTEXT`, `ASSISTANT_BACKEND_MODE=auto|openai|custom`, and `ASSISTANT_BACKEND_MODEL` (model name for OpenAI-compatible endpoints, default `assistant`) before launching.
+
+To stage each turn to a capture webhook, also set `CAPTURE_WEBHOOK_URL` plus optional `CAPTURE_WEBHOOK_TOKEN`. The assistant POSTs a neutral, backend-agnostic capture event:
+
+```json
+{"source": "voxcpm-phone-assistant", "type": "text", "timestamp": "...",
+ "message": "...", "reply": "...", "profile": "...", "turn": 1}
+```
+
+Mapping this onto a specific ingestion schema (field renames, classification, validation) is the receiving webhook's responsibility.
 
 ### 🚢 Production Deployment (Nano-vLLM)
 
