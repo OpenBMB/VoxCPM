@@ -92,6 +92,8 @@ pip install voxcpm
 
 > **Requirements:** Python ≥ 3.10 (<3.13), PyTorch ≥ 2.5.0, CUDA ≥ 12.0. See [Quick Start Docs](https://voxcpm.readthedocs.io/en/latest/quickstart.html) for details.
 
+> **Compatibility:** The `seed` parameter and CLI option require a release newer than 2.0.3. With `voxcpm==2.0.3`, omit `seed`; until the next release, install from source with `pip install git+https://github.com/OpenBMB/VoxCPM.git`.
+
 ### Python API
 
 #### 🗣️ Text-to-Speech

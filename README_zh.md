@@ -94,6 +94,8 @@ pip install voxcpm
 
 > **环境要求：** Python ≥ 3.10 (<3.13)，PyTorch ≥ 2.5.0，CUDA ≥ 12.0。详见 [快速开始文档](https://voxcpm.readthedocs.io/zh-cn/latest/quickstart.html)。
 
+> **兼容性：** `seed` 参数和命令行选项需要高于 2.0.3 的版本。使用 `voxcpm==2.0.3` 时请省略 `seed`；新版本发布前，可通过 `pip install git+https://github.com/OpenBMB/VoxCPM.git` 从源码安装。
+
 ### Python API
 
 #### 🗣️ 文本转语音
