@@ -44,7 +44,6 @@ dependencies = [
     "soundfile",
     "librosa",
     "matplotlib",
-    "funasr",
     "spaces",
     "argbind",
     "safetensors"
@@ -65,6 +64,7 @@ timestamps = [
 
 [project.scripts]
 voxcpm = "voxcpm.cli:main"
+voxcpm-assistant = "voxcpm.phone_assistant:main"
 
 [project.urls]
 Homepage = "https://github.com/OpenBMB/VoxCPM"
