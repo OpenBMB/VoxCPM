@@ -10,9 +10,11 @@ Sobre el guion fijo `benchmarks/bench_script.txt` (8 bloques medidos + 2 warmup,
 | Estado | Inferencia media/bloque | Ratio inferencia/audio |
 |---|---|---|
 | Código anterior (baseline) | 17.10s | 2.30× |
-| **Código actual** | **15.29s** | **2.06×** |
+| **Código actual (por defecto, bit-exact)** | **15.29s** | **2.06×** |
+| **Código actual + `--optimize` (triton-windows)** | **8.76s** | **1.24×** |
 
-**~11% más rápido, bit-exact (8/8 hashes idénticos), y sin la degradación progresiva que acababa en OOM.**
+- Por defecto: ~11% más rápido, **bit-exact** (8/8 hashes idénticos), y sin la degradación progresiva que acababa en OOM.
+- Con `--optimize` (tras instalar `triton-windows`, extra `compile` del pyproject): **43% más rápido adicional** — casi tiempo real. No es bit-exact respecto a eager (equivale a cambiar de seed: misma calidad en distribución, duraciones a <5% de eager, 0 anomalías), pero sí es **reproducible**: misma seed → mismo WAV entre pasadas y arranques compilados (verificado 8/8). Coste: el arranque tarda varios minutos compilando. `--optimize` activa solo `VOXCPM_STOP_CHECK_BATCH=8` (stop-check diferido, bit-exact) para que los CUDA graphs rindan; 0 cudagraph skips y 1 recompile en los logs; VRAM estable (reserved ~6.4 GB plano).
 
 ## Qué se cambió (por defecto, bit-exact)
 
@@ -30,13 +32,13 @@ Sobre el guion fijo `benchmarks/bench_script.txt` (8 bloques medidos + 2 warmup,
 | Ventana de atención KV (slice a posiciones válidas) | ~12% MÁS LENTA (slice no contiguo → kernel SDPA peor) y no bit-exact | `bench_kvwindow.json` |
 | `cudnn.benchmark` | Contraproducente: re-autotunea con cada longitud nueva del VAE | `bench_optin_flags.json` (paquete −36%) |
 | TF32 | Solo tocaría el decode fp32 del VAE (~1.5% del tiempo); no compensa perder bit-exactness | perfil `VOXCPM_PROFILE` |
-| `--optimize` (torch.compile) | **No compila nada: falta triton** ("torch.compile disabled - triton is not installed"). Queda solo el warmup: minutos de arranque, ~1.5% más lento y cambia los numéricos (audio seed-equivalente distinto) | `bench_fase5_compile.json`, `bench_fase5_opt_k1.json` |
+| `--optimize` SIN triton instalado | No compila nada ("torch.compile disabled - triton is not installed"): queda solo el warmup — minutos de arranque, ~1.5% más lento y cambia los numéricos. Con `triton-windows` instalado sí compila y gana 43% (ver arriba) | `bench_fase5_compile.json`, `bench_triton_compile.json` |
 
 ## Dónde se va el tiempo (perfil con `VOXCPM_PROFILE=1`)
 
 Por petición (primera petición, servidor fresco): **DiT/difusión ~64%** (10-12 pasos Euler × forward 2×batch por patch), pasos LM ~27%, feat_encoder ~5%, prefill ~4%, VAE decode ~1.5%, sync del stop-check ~0.1%.
 
-Implicación: el techo de mejora adicional sin tocar calidad está en la DiT. La única palanca grande pendiente sería torch.compile de verdad (instalando `triton-windows`) — potencial 20-40%, sin evaluar porque añade dependencia y el compile no es bit-exact.
+Implicación: el techo de mejora adicional estaba en la DiT — exactamente lo que torch.compile + CUDA graphs atacó al instalarse `triton-windows` (43% medido). Ganancias mayores ya exigirían tocar calidad (menos timesteps) o hardware.
 
 ## Cómo verificar / reproducir
 

@@ -233,12 +233,17 @@ def main():
     parser.add_argument(
         "--optimize",
         action="store_true",
-        help="Enable torch.compile/warmup optimization when the selected device supports it. "
-        "OJO: requiere triton (no instalado en este entorno -> no compila nada y solo queda el "
-        "warmup, que tarda minutos y ademas cambia los numericos: con la misma seed el audio "
-        "sale distinto que sin --optimize). Medido 2026-07-17: 1.5%% MAS LENTO que sin el flag.",
+        help="torch.compile + CUDA graphs (requiere triton; en Windows: pip install triton-windows). "
+        "Medido en la RTX 3070: 15.3s -> 8.8s por bloque (43%% mas rapido, ratio 1.24x). El arranque "
+        "tarda varios minutos compilando. No es bit-exact respecto a eager (equivale a cambiar de "
+        "seed; con la misma seed entre arranques compilados SI es reproducible).",
     )
     args = parser.parse_args()
+
+    if args.optimize:
+        # Con CUDA graphs el sync GPU->CPU por patch del stop-check rompe el
+        # pipelining; difiere la comprobacion en lotes de 8 (bit-exact, recorta).
+        os.environ.setdefault("VOXCPM_STOP_CHECK_BATCH", "8")
 
     service = VoxCPMService(model_id=args.model_id, optimize=args.optimize)
     VoxCPMRequestHandler.service = service

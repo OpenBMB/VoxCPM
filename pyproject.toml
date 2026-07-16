@@ -62,6 +62,11 @@ dev = [
 timestamps = [
     "stable-ts>=2.19.1",
 ]
+compile = [
+    # torch.compile en Windows necesita este port de triton (43% mas rapido
+    # con voxcpm_server.py --optimize; ver docs/optimizacion-inferencia.md).
+    "triton-windows>=3.7; sys_platform == 'win32'",
+]
 
 [project.scripts]
 voxcpm = "voxcpm.cli:main"

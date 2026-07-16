@@ -7,3 +7,4 @@ voxcpm.egg-info
 app_local.py
 .devswarm-temp/
 benchmark_*.json
+benchmarks/escucha_*/
