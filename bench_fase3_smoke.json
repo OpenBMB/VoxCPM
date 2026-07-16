@@ -1,0 +1,72 @@
+{
+  "server": {
+    "ok": true,
+    "model_loaded": true,
+    "model_id": "openbmb/VoxCPM2",
+    "optimize": false,
+    "prompt_caches": 0,
+    "last_metrics": null
+  },
+  "summary": {
+    "completed": 2,
+    "failed": 0,
+    "warmups": 0,
+    "avg_inference_seconds": 17.5935,
+    "avg_audio_seconds": 6.72,
+    "avg_ratio": 2.618080357142857,
+    "median_ratio": 2.618080357142857,
+    "total_cache_seconds": 8.882,
+    "total_request_seconds": 44.123999999999995,
+    "total_inference_seconds": 35.187
+  },
+  "results": [
+    {
+      "ok": true,
+      "index": 1,
+      "text": "Fíjate nada más lo que acaba de pasar, porque esto que les voy a contar hoy no es un chisme cualquiera de los que se olvidan en tres días.",
+      "text_chars": 138,
+      "seed": 1235,
+      "local_seconds": 29.332188600001246,
+      "metrics": {
+        "cuda_alloc_mb": 5435,
+        "cuda_reserved_mb": 5780,
+        "cache_hit": false,
+        "cache_seconds": 8.882,
+        "inference_seconds": 20.397,
+        "vram_release_seconds": 0.05,
+        "wav_write_seconds": 0.001,
+        "request_seconds": 29.331,
+        "queue_seconds": 0.0,
+        "audio_seconds": 6.72,
+        "text_chars": 138
+      },
+      "ratio": 3.035267857142857,
+      "wav_sha256": "a78c101ab220b99f9fc6afdb634888904cb0528a9c4f8b4f7b2ad218159a3a1a",
+      "warmup": false
+    },
+    {
+      "ok": true,
+      "index": 2,
+      "text": "Estamos hablando de una historia que todo el país tenía en la boca desde hace semanas, y que nadie se atrevía a contar completa.",
+      "text_chars": 128,
+      "seed": 1236,
+      "local_seconds": 14.794587100001081,
+      "metrics": {
+        "cuda_alloc_mb": 5434,
+        "cuda_reserved_mb": 5782,
+        "cache_hit": true,
+        "cache_seconds": 0.0,
+        "inference_seconds": 14.79,
+        "vram_release_seconds": 0.002,
+        "wav_write_seconds": 0.001,
+        "request_seconds": 14.793,
+        "queue_seconds": 0.0,
+        "audio_seconds": 6.72,
+        "text_chars": 128
+      },
+      "ratio": 2.200892857142857,
+      "wav_sha256": "4a3963f3b06ffa767111914b5f224a6fa1dacae181e4ae302e7ea21b237b44fe",
+      "warmup": false
+    }
+  ]
+}

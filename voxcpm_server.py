@@ -170,6 +170,9 @@ class VoxCPMService:
 
 class VoxCPMRequestHandler(BaseHTTPRequestHandler):
     service = None
+    # HTTP/1.1 para que los clientes reutilicen la conexion (keep-alive).
+    # Todas las respuestas llevan Content-Length, requisito de HTTP/1.1.
+    protocol_version = "HTTP/1.1"
 
     def _send_json(self, status, payload):
         body = json.dumps(payload).encode("utf-8")
