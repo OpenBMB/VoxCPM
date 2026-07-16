@@ -138,8 +138,9 @@ def build_voxcpm_payload(
     cfg_value,
     inference_timesteps,
     normalize,
+    seed=None,
 ):
-    return {
+    payload = {
         "text": text,
         "model_id": model_id,
         "prompt_text": prompt_text,
@@ -151,6 +152,9 @@ def build_voxcpm_payload(
         "denoise": False,
         "trim_silence_vad": False,
     }
+    if seed is not None:
+        payload["seed"] = seed
+    return payload
 
 
 def ensure_dirs(*paths):

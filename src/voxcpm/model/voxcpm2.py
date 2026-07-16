@@ -20,6 +20,7 @@ limitations under the License.
 
 import os
 import sys
+import time
 from typing import Tuple, Union, Generator, List, Optional
 
 import torch
@@ -54,6 +55,56 @@ from .utils import (
     pick_runtime_dtype,
     resolve_runtime_device,
 )
+
+
+VOXCPM_PROFILE = os.environ.get("VOXCPM_PROFILE", "") == "1"
+
+
+class _InferenceProfiler:
+    """Per-request timing buckets for the AR loop, active only with VOXCPM_PROFILE=1 on CUDA.
+
+    GPU buckets use CUDA event pairs (no sync until report); host-blocking spans
+    (like the stop-check .item()) use wall-clock accumulators. Performs no RNG calls.
+    """
+
+    def __init__(self):
+        self._pairs = []
+        self._wall_totals = {}
+        self._wall_counts = {}
+
+    def start(self):
+        event = torch.cuda.Event(enable_timing=True)
+        event.record()
+        return event
+
+    def stop(self, bucket, start_event):
+        end_event = torch.cuda.Event(enable_timing=True)
+        end_event.record()
+        self._pairs.append((bucket, start_event, end_event))
+
+    def add_wall(self, bucket, seconds):
+        self._wall_totals[bucket] = self._wall_totals.get(bucket, 0.0) + seconds
+        self._wall_counts[bucket] = self._wall_counts.get(bucket, 0) + 1
+
+    def report(self, wall_seconds):
+        torch.cuda.synchronize()
+        gpu_totals = {}
+        gpu_counts = {}
+        for bucket, start_event, end_event in self._pairs:
+            gpu_totals[bucket] = gpu_totals.get(bucket, 0.0) + start_event.elapsed_time(end_event) / 1000.0
+            gpu_counts[bucket] = gpu_counts.get(bucket, 0) + 1
+        lines = [f"[VOXCPM_PROFILE] _inference wall={wall_seconds:.3f}s"]
+        for bucket, total in sorted(gpu_totals.items(), key=lambda item: item[1], reverse=True):
+            lines.append(f"[VOXCPM_PROFILE]   {bucket}: gpu={total:.3f}s (n={gpu_counts[bucket]})")
+        for bucket, total in sorted(self._wall_totals.items(), key=lambda item: item[1], reverse=True):
+            lines.append(f"[VOXCPM_PROFILE]   {bucket}: wall={total:.3f}s (n={self._wall_counts[bucket]})")
+        print("\n".join(lines), file=sys.stderr, flush=True)
+
+
+def _new_profiler():
+    if VOXCPM_PROFILE and torch.cuda.is_available():
+        return _InferenceProfiler()
+    return None
 
 
 # A simple function to trim audio silence using VAD, not used default
@@ -683,7 +734,18 @@ class VoxCPM2Model(nn.Module):
 
         if not streaming:
             self.last_successful_seed = last_attempt_seed
+            profile_vae = VOXCPM_PROFILE and torch.cuda.is_available()
+            if profile_vae:
+                torch.cuda.synchronize()
+                vae_started = time.perf_counter()
             decode_audio = self.audio_vae.decode(latent_pred.to(torch.float32))
+            if profile_vae:
+                torch.cuda.synchronize()
+                print(
+                    f"[VOXCPM_PROFILE]   vae_decode: wall={time.perf_counter() - vae_started:.3f}s",
+                    file=sys.stderr,
+                    flush=True,
+                )
             decode_patch_len = self.patch_size * self._decode_chunk_size
             if context_len > 0:
                 decode_audio = decode_audio[..., decode_patch_len * context_len :].squeeze(1).cpu()
@@ -978,7 +1040,18 @@ class VoxCPM2Model(nn.Module):
                     break
         if not streaming:
             self.last_successful_seed = last_attempt_seed
+            profile_vae = VOXCPM_PROFILE and torch.cuda.is_available()
+            if profile_vae:
+                torch.cuda.synchronize()
+                vae_started = time.perf_counter()
             decode_audio = self.audio_vae.decode(latent_pred.to(torch.float32))
+            if profile_vae:
+                torch.cuda.synchronize()
+                print(
+                    f"[VOXCPM_PROFILE]   vae_decode: wall={time.perf_counter() - vae_started:.3f}s",
+                    file=sys.stderr,
+                    flush=True,
+                )
             decode_patch_len = self.patch_size * self._decode_chunk_size
             if context_len > 0:
                 decode_audio = decode_audio[..., decode_patch_len * context_len :].squeeze(1).cpu()
@@ -1031,6 +1104,10 @@ class VoxCPM2Model(nn.Module):
         """
         B, T, P, D = feat.shape
 
+        profiler = _new_profiler()
+        wall_started = time.perf_counter() if profiler is not None else 0.0
+        prefill_event = profiler.start() if profiler is not None else None
+
         prefill_encoder = getattr(self, "_feat_encoder_raw", self.feat_encoder)
         feat_embed = prefill_encoder(feat)  # [b, t, h_feat]
         feat_embed = self.enc_to_lm_proj(feat_embed)
@@ -1080,7 +1157,11 @@ class VoxCPM2Model(nn.Module):
         self.residual_lm.kv_cache.fill_caches(residual_kv_cache_tuple)
         residual_hidden = residual_enc_outputs[:, -1, :]
 
+        if profiler is not None:
+            profiler.stop("prefill", prefill_event)
+
         for i in tqdm(range(max_len)):
+            dit_event = profiler.start() if profiler is not None else None
             dit_hidden_1 = self.lm_to_dit_proj(lm_hidden)  # [b, h_dit]
             dit_hidden_2 = self.res_to_dit_proj(residual_hidden)  # [b, h_dit]
             dit_hidden = torch.cat((dit_hidden_1, dit_hidden_2), dim=-1)
@@ -1094,9 +1175,14 @@ class VoxCPM2Model(nn.Module):
             ).transpose(
                 1, 2
             )  # [b, p, d]
+            if profiler is not None:
+                profiler.stop("dit", dit_event)
 
+            encoder_event = profiler.start() if profiler is not None else None
             curr_embed = self.feat_encoder(pred_feat.unsqueeze(1))  # b, 1, c
             curr_embed = self.enc_to_lm_proj(curr_embed)
+            if profiler is not None:
+                profiler.stop("feat_encoder", encoder_event)
 
             pred_feat_seq.append(pred_feat.unsqueeze(1))  # b, 1, p, d
             prefix_feat_cond = pred_feat
@@ -1110,19 +1196,31 @@ class VoxCPM2Model(nn.Module):
                 if len(pred_feat_seq) > streaming_prefix_len:
                     pred_feat_seq = pred_feat_seq[-streaming_prefix_len:]
 
+            stop_started = time.perf_counter() if profiler is not None else 0.0
             stop_flag = self.stop_head(self.stop_actn(self.stop_proj(lm_hidden))).argmax(dim=-1)[0].cpu().item()
+            if profiler is not None:
+                profiler.add_wall("stop_check_sync", time.perf_counter() - stop_started)
             if i > min_len and stop_flag == 1:
                 break
 
+            base_lm_event = profiler.start() if profiler is not None else None
             lm_hidden = self.base_lm.forward_step(
                 curr_embed[:, 0, :], torch.tensor([self.base_lm.kv_cache.step()], device=curr_embed.device)
             ).clone()
+            if profiler is not None:
+                profiler.stop("base_lm_step", base_lm_event)
 
+            residual_lm_event = profiler.start() if profiler is not None else None
             lm_hidden = self.fsq_layer(lm_hidden)
             curr_residual_input = self.fusion_concat_proj(torch.cat((lm_hidden, curr_embed[:, 0, :]), dim=-1))
             residual_hidden = self.residual_lm.forward_step(
                 curr_residual_input, torch.tensor([self.residual_lm.kv_cache.step()], device=curr_embed.device)
             ).clone()
+            if profiler is not None:
+                profiler.stop("residual_lm_step", residual_lm_event)
+
+        if profiler is not None:
+            profiler.report(time.perf_counter() - wall_started)
 
         if not streaming:
             pred_feat_seq = torch.cat(pred_feat_seq, dim=1)  # b, t, p, d

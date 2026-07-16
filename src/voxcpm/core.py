@@ -355,7 +355,7 @@ class VoxCPM:
 
         if os.path.exists(cache_path):
             try:
-                payload = torch.load(cache_path, map_location="cpu")
+                payload = torch.load(cache_path, map_location="cpu", weights_only=True)
                 if payload.get("metadata") == expected_metadata and "prompt_cache" in payload:
                     print(f"Usando cache de voz: {cache_path}")
                     return payload["prompt_cache"]

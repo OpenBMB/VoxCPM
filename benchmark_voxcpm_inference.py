@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import json
 import statistics
 import time
@@ -138,12 +139,32 @@ def find_audio_anomalies(baseline_results, candidate_results, threshold=DEFAULT_
     return anomalies
 
 
+def compare_wav_hashes(baseline_results, candidate_results):
+    """Compara wav_sha256 por indice. Solo tiene sentido con la misma seed en ambos runs."""
+    baseline_by_index = _results_by_index(baseline_results)
+    candidate_by_index = _results_by_index(candidate_results)
+    shared = sorted(set(baseline_by_index) & set(candidate_by_index))
+    comparable = []
+    mismatches = []
+    for index in shared:
+        baseline_result = baseline_by_index[index]
+        candidate_result = candidate_by_index[index]
+        if not baseline_result.get("wav_sha256") or not candidate_result.get("wav_sha256"):
+            continue
+        if baseline_result.get("seed") != candidate_result.get("seed"):
+            continue
+        comparable.append(index)
+        if baseline_result["wav_sha256"] != candidate_result["wav_sha256"]:
+            mismatches.append(index)
+    return {"comparable": comparable, "mismatches": mismatches}
+
+
 def pick_benchmark_blocks(script_file, max_chars, limit):
     _paragraphs, blocks = read_paragraph_blocks(script_file, max_chars)
     return blocks[:limit]
 
 
-def build_payload(text):
+def build_payload(text, seed=None):
     return build_voxcpm_payload(
         text=text,
         model_id=MODEL_ID,
@@ -152,28 +173,38 @@ def build_payload(text):
         cfg_value=CFG_VALUE,
         inference_timesteps=INFERENCE_TIMESTEPS,
         normalize=NORMALIZE,
+        seed=seed,
     )
 
 
-def run_benchmark(blocks, server_url, warmup_count=0):
+def run_benchmark(blocks, server_url, warmup_count=0, base_seed=None, save_wav_dir=""):
+    if save_wav_dir:
+        Path(save_wav_dir).mkdir(parents=True, exist_ok=True)
     results = []
     for index, text in enumerate(blocks, start=1):
         is_warmup = index <= warmup_count
         label = "Warmup" if is_warmup else "Midiendo"
-        print(f"\n[{index}/{len(blocks)}] {label} ({len(text)} caracteres)...")
+        # Seed distinta pero determinista por bloque, para poder comparar hashes entre runs.
+        seed = base_seed + index if base_seed is not None else None
+        print(f"\n[{index}/{len(blocks)}] {label} ({len(text)} caracteres, seed={seed})...")
         started = time.perf_counter()
         try:
-            _wav_bytes, metrics = generate_wav_bytes_with_metrics(build_payload(text), server_url)
+            wav_bytes, metrics = generate_wav_bytes_with_metrics(build_payload(text, seed=seed), server_url)
             local_seconds = time.perf_counter() - started
             ratio = metric_ratio(metrics)
+            wav_sha256 = hashlib.sha256(wav_bytes).hexdigest()
+            if save_wav_dir:
+                Path(save_wav_dir, f"bloque_{index:03d}.wav").write_bytes(wav_bytes)
             results.append(
                 {
                     "ok": True,
                     "index": index,
                     "text_chars": len(text),
+                    "seed": seed,
                     "local_seconds": local_seconds,
                     "metrics": metrics,
                     "ratio": ratio,
+                    "wav_sha256": wav_sha256,
                     "warmup": is_warmup,
                 }
             )
@@ -202,7 +233,7 @@ def print_summary(summary):
     print(f"  request servidor total: {summary['total_request_seconds']:.2f}s")
 
 
-def print_comparison(comparison, anomalies=None):
+def print_comparison(comparison, anomalies=None, hash_report=None):
     print("\nComparacion:")
     print(
         f"  ratio mediano inferencia/audio: {comparison['baseline_median_ratio']:.2f}x -> "
@@ -226,6 +257,16 @@ def print_comparison(comparison, anomalies=None):
                 f"{anomaly['candidate_audio_seconds']:.2f}s "
                 f"({anomaly['change_percent']:.1f}% cambio)"
             )
+    if hash_report is not None:
+        comparable = hash_report["comparable"]
+        mismatches = hash_report["mismatches"]
+        if not comparable:
+            print("  hashes WAV: no comparables (falta wav_sha256 o seeds distintas)")
+        elif mismatches:
+            print(f"  hashes WAV: {len(comparable) - len(mismatches)}/{len(comparable)} identicos")
+            print(f"    bloques con hash DISTINTO: {mismatches}")
+        else:
+            print(f"  hashes WAV: {len(comparable)}/{len(comparable)} identicos (bit-exact)")
 
 
 def main():
@@ -237,6 +278,17 @@ def main():
     parser.add_argument("--health-timeout", type=float, default=10.0)
     parser.add_argument("--warmup-count", type=int, default=0)
     parser.add_argument("--audio-diff-threshold", type=float, default=DEFAULT_AUDIO_DIFF_THRESHOLD)
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Seed base determinista (bloque i usa seed+i). Permite comparar wav_sha256 entre runs.",
+    )
+    parser.add_argument(
+        "--save-wav-dir",
+        default="",
+        help="Directorio opcional donde guardar los WAV generados para escucharlos o diffearlos.",
+    )
     parser.add_argument(
         "--compare-json",
         nargs=2,
@@ -253,7 +305,12 @@ def main():
             candidate.get("results", []),
             threshold=args.audio_diff_threshold,
         )
-        print_comparison(compare_summaries(baseline["summary"], candidate["summary"]), anomalies=anomalies)
+        hash_report = compare_wav_hashes(baseline.get("results", []), candidate.get("results", []))
+        print_comparison(
+            compare_summaries(baseline["summary"], candidate["summary"]),
+            anomalies=anomalies,
+            hash_report=hash_report,
+        )
         return
 
     try:
@@ -272,7 +329,13 @@ def main():
     block_count = args.limit + max(args.warmup_count, 0)
     blocks = pick_benchmark_blocks(args.script_file, MAX_CHARS, block_count)
     print(f"Benchmark: {len(blocks)} bloques desde {args.script_file} ({args.warmup_count} warmup)")
-    results = run_benchmark(blocks, args.server_url, warmup_count=max(args.warmup_count, 0))
+    results = run_benchmark(
+        blocks,
+        args.server_url,
+        warmup_count=max(args.warmup_count, 0),
+        base_seed=args.seed,
+        save_wav_dir=args.save_wav_dir,
+    )
     summary = summarize_metrics(results)
     print_summary(summary)
 
