@@ -5,16 +5,13 @@ import traceback
 import soundfile as sf
 
 from tts_workflow import (
-    audit_audio_cache,
     build_srt_entries,
     build_voxcpm_payload,
     concatenate_wavs,
     ensure_dirs,
     get_audio_info,
     parse_structured_shorts,
-    prepare_cached_wav,
     read_wav,
-    record_cached_wav,
     split_text_blocks,
     write_wav_bytes,
 )
@@ -75,14 +72,12 @@ def main():
         total = {"total": 0, "reusable": 0, "missing": 0}
         for short_idx, short_text in enumerate(shorts, start=1):
             blocks = split_text_blocks(short_text, MAX_CHARS)
-            audit = audit_audio_cache(
-                blocks,
-                BLOQUES_DIR,
-                build_payload,
-                lambda block_idx, short_idx=short_idx: block_path_for(short_idx, block_idx),
+            reusable = sum(
+                1 for block_idx in range(1, len(blocks) + 1) if os.path.exists(block_path_for(short_idx, block_idx))
             )
-            for key in total:
-                total[key] += audit[key]
+            total["total"] += len(blocks)
+            total["reusable"] += reusable
+            total["missing"] += len(blocks) - reusable
         print(
             "Auditoria cache: " f"{total['reusable']} reutilizables, {total['missing']} nuevos, {total['total']} total"
         )
@@ -118,23 +113,18 @@ def main():
 
         for block_idx, block in enumerate(blocks, start=1):
             block_path = block_path_for(short_idx, block_idx)
-            payload = build_payload(block)
-            cache_key, cache_source = prepare_cached_wav(BLOQUES_DIR, block_path, payload)
 
-            if cache_source:
+            if os.path.exists(block_path):
                 info = get_audio_info(block_path)
                 wav, sr = read_wav(block_path)
-                record_cached_wav(BLOQUES_DIR, cache_key, payload, block_path, info)
                 sample_rate = sample_rate or sr
                 fragments.append(wav)
                 srt_entries.append((block, info.duration))
                 reused_count += 1
-                print(
-                    f"  [{block_idx}/{len(blocks)}] Reutilizado ({cache_source}) "
-                    f"({info.duration:.2f}s), cargando..."
-                )
+                print(f"  [{block_idx}/{len(blocks)}] Reutilizado ({info.duration:.2f}s), cargando...")
                 continue
 
+            payload = build_payload(block)
             print(f"\n  [{block_idx}/{len(blocks)}] Generando ({len(block)} caracteres)...")
             print(f"    -> {block[:80]}{'...' if len(block) > 80 else ''}")
 
@@ -152,7 +142,6 @@ def main():
                 sample_rate = sample_rate or sr
                 fragments.append(wav)
                 srt_entries.append((block, info.duration))
-                record_cached_wav(BLOQUES_DIR, cache_key, payload, block_path, info, metrics=metrics)
                 generated_count += 1
                 generated_seconds += elapsed
                 if metrics:

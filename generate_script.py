@@ -5,15 +5,12 @@ import traceback
 import soundfile as sf
 
 from tts_workflow import (
-    audit_audio_cache,
     build_voxcpm_payload,
     concatenate_wavs,
     ensure_dirs,
     get_audio_info,
-    prepare_cached_wav,
     read_paragraph_blocks,
     read_wav,
-    record_cached_wav,
     write_srt,
     write_wav_bytes,
 )
@@ -71,10 +68,9 @@ def main():
     ensure_dirs(OUTPUT_DIR)
 
     if AUDIT_ONLY:
-        audit = audit_audio_cache(blocks, OUTPUT_DIR, build_payload, block_path_for)
-        print(
-            "Auditoria cache: " f"{audit['reusable']} reutilizables, {audit['missing']} nuevos, {audit['total']} total"
-        )
+        reusable = sum(1 for i in range(1, len(blocks) + 1) if os.path.exists(block_path_for(i)))
+        missing = len(blocks) - reusable
+        print(f"Auditoria cache: {reusable} reutilizables, {missing} nuevos, {len(blocks)} total")
         return
 
     try:
@@ -97,20 +93,18 @@ def main():
 
     for i, block in enumerate(blocks, start=1):
         block_path = block_path_for(i)
-        payload = build_payload(block)
-        cache_key, cache_source = prepare_cached_wav(OUTPUT_DIR, block_path, payload)
 
-        if cache_source:
+        if os.path.exists(block_path):
             info = get_audio_info(block_path)
             wav, sr = read_wav(block_path)
-            record_cached_wav(OUTPUT_DIR, cache_key, payload, block_path, info)
             sample_rate = sample_rate or sr
             fragments.append(wav)
             srt_entries.append((block, info.duration))
             reused_count += 1
-            print(f"[{i}/{len(blocks)}] Reutilizado ({cache_source}): {block_path} ({info.duration:.2f}s)")
+            print(f"[{i}/{len(blocks)}] Reutilizado: {block_path} ({info.duration:.2f}s)")
             continue
 
+        payload = build_payload(block)
         print(f"\n[{i}/{len(blocks)}] Generando ({len(block)} caracteres)...")
         print(f"  -> {block[:90]}{'...' if len(block) > 90 else ''}")
 
@@ -128,7 +122,6 @@ def main():
             sample_rate = sample_rate or sr
             fragments.append(wav)
             srt_entries.append((block, info.duration))
-            record_cached_wav(OUTPUT_DIR, cache_key, payload, block_path, info, metrics=metrics)
             generated_count += 1
             generated_seconds += elapsed
             if metrics:
