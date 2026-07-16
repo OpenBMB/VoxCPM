@@ -43,6 +43,17 @@ class VoxCPMService:
         print("Modelo cargado.", flush=True)
 
     @staticmethod
+    def _cuda_memory_mb():
+        import torch
+
+        if not torch.cuda.is_available():
+            return None, None
+        return (
+            round(torch.cuda.memory_allocated() / 2**20),
+            round(torch.cuda.memory_reserved() / 2**20),
+        )
+
+    @staticmethod
     def _audio_fingerprint(path):
         if not path:
             return None
@@ -109,6 +120,17 @@ class VoxCPMService:
             )
             inference_seconds = time.perf_counter() - inference_started
 
+            # Devuelve al sistema los bloques cacheados que quedaron libres tras el
+            # pico de la peticion (VAE decode fp32). Sin esto el proceso retiene
+            # ~7.4 GB de VRAM ocioso y Windows degrada/OOMea con el tiempo. Coste:
+            # unos ms de cudaMalloc en la siguiente peticion, nada frente a ~18s.
+            vram_release_started = time.perf_counter()
+            import torch
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            vram_release_seconds = time.perf_counter() - vram_release_started
+
         wav_write_started = time.perf_counter()
         buffer = io.BytesIO()
         sf.write(buffer, wav, self.model.tts_model.sample_rate, format="WAV")
@@ -117,10 +139,14 @@ class VoxCPMService:
 
         sample_rate = self.model.tts_model.sample_rate
         audio_seconds = len(wav) / sample_rate if sample_rate else 0.0
+        cuda_alloc_mb, cuda_reserved_mb = self._cuda_memory_mb()
         metrics = {
+            "cuda_alloc_mb": cuda_alloc_mb,
+            "cuda_reserved_mb": cuda_reserved_mb,
             "cache_hit": cache_hit,
             "cache_seconds": round(prompt_cache_seconds, 3),
             "inference_seconds": round(inference_seconds, 3),
+            "vram_release_seconds": round(vram_release_seconds, 3),
             "wav_write_seconds": round(wav_write_seconds, 3),
             "request_seconds": round(time.perf_counter() - request_started, 3),
             "queue_seconds": round(locked_at - request_started, 3),

@@ -51,3 +51,13 @@ Durante `VoxCPM2Model.from_local` el modelo se construye en **fp32 en CPU** (~10
 ## Nota para el futuro
 
 Cualquier punto de entrada nuevo que cargue el modelo directamente (por ejemplo `app.py`, scripts de benchmark standalone, scripts de fine-tuning) necesita la misma variable de entorno antes de importar torch. Alternativa de código (no aplicada, validada): construir el modelo directamente en bf16 para reducir también el pico de carga.
+
+## Anexo (2026-07-17): VRAM — degradación progresiva y OOM en sesiones largas
+
+Síntoma relacionado pero distinto: con el servidor sirviendo muchas peticiones seguidas, la velocidad degradaba progresivamente (ratio inferencia/audio de ~2.3× a >3×, y un servidor encendido horas llegó a ~4.8×) hasta acabar en `CUDA error: out of memory`.
+
+**Causa:** el caching allocator de CUDA se queda con el pico de memoria reservada (~7.4 GB de los 8 GB de la RTX 3070, medido con `torch.cuda.memory_reserved()`) y no la devuelve nunca; `memory_allocated()` se mantenía plano en ~5.4 GB (no hay fuga de tensores). Con ~240 MiB libres en todo el sistema, Windows (WDDM) empieza a hacer spill a memoria compartida (ralentización progresiva) y peticiones con formas nuevas acaban en OOM por fragmentación.
+
+**Fix aplicado** en `voxcpm_server.py`: `torch.cuda.empty_cache()` tras cada generación (dentro del lock). La VRAM reservada baja a ~5.8 GB tras cada petición, 20+ peticiones seguidas estables sin degradación y sin OOM, con coste de unos ms por petición. Bit-exact verificado (mismos hashes WAV con la misma seed).
+
+Nota: `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` **no está soportado en Windows** (torch 2.11 lo ignora con un UserWarning); no sirve como alternativa aquí. Las métricas del servidor ahora incluyen `cuda_alloc_mb`, `cuda_reserved_mb` y `vram_release_seconds` para vigilar esto.

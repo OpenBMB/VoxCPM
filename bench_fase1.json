@@ -1,0 +1,224 @@
+{
+  "server": {
+    "ok": true,
+    "model_loaded": true,
+    "model_id": "openbmb/VoxCPM2",
+    "optimize": false,
+    "prompt_caches": 0,
+    "last_metrics": null
+  },
+  "summary": {
+    "completed": 8,
+    "failed": 0,
+    "warmups": 2,
+    "avg_inference_seconds": 16.64525,
+    "avg_audio_seconds": 7.5,
+    "avg_ratio": 2.252292612540968,
+    "median_ratio": 2.2365705128205127,
+    "total_cache_seconds": 0.0,
+    "total_request_seconds": 133.173,
+    "total_inference_seconds": 133.162
+  },
+  "results": [
+    {
+      "ok": true,
+      "index": 1,
+      "text_chars": 121,
+      "seed": 1235,
+      "local_seconds": 26.75985109999965,
+      "metrics": {
+        "cache_hit": false,
+        "cache_seconds": 7.623,
+        "inference_seconds": 19.093,
+        "wav_write_seconds": 0.001,
+        "request_seconds": 26.717,
+        "queue_seconds": 0.0,
+        "audio_seconds": 8.32,
+        "text_chars": 121
+      },
+      "ratio": 2.2948317307692307,
+      "wav_sha256": "78edc06174001e75e2be60212af0b27b99fa4ff9b304f9d0a27b5ff89bac769d",
+      "warmup": true
+    },
+    {
+      "ok": true,
+      "index": 2,
+      "text_chars": 95,
+      "seed": 1236,
+      "local_seconds": 14.21525720000136,
+      "metrics": {
+        "cache_hit": true,
+        "cache_seconds": 0.0,
+        "inference_seconds": 14.212,
+        "wav_write_seconds": 0.001,
+        "request_seconds": 14.213,
+        "queue_seconds": 0.0,
+        "audio_seconds": 6.4,
+        "text_chars": 95
+      },
+      "ratio": 2.2206249999999996,
+      "wav_sha256": "b430fdd5978c7a864c9c23e1895cd615ccf9c417a9708d41d333596ea79fdb80",
+      "warmup": true
+    },
+    {
+      "ok": true,
+      "index": 3,
+      "text_chars": 158,
+      "seed": 1237,
+      "local_seconds": 23.347160799999983,
+      "metrics": {
+        "cache_hit": true,
+        "cache_seconds": 0.0,
+        "inference_seconds": 23.324,
+        "wav_write_seconds": 0.002,
+        "request_seconds": 23.325,
+        "queue_seconds": 0.0,
+        "audio_seconds": 10.4,
+        "text_chars": 158
+      },
+      "ratio": 2.242692307692308,
+      "wav_sha256": "8b6841b65eea4320172c74d77cd61a0c59612887ae8da8ca057408237aa1b6d4",
+      "warmup": false
+    },
+    {
+      "ok": true,
+      "index": 4,
+      "text_chars": 193,
+      "seed": 1238,
+      "local_seconds": 27.841776299999765,
+      "metrics": {
+        "cache_hit": true,
+        "cache_seconds": 0.0,
+        "inference_seconds": 27.836,
+        "wav_write_seconds": 0.002,
+        "request_seconds": 27.838,
+        "queue_seconds": 0.0,
+        "audio_seconds": 12.48,
+        "text_chars": 193
+      },
+      "ratio": 2.230448717948718,
+      "wav_sha256": "100d8f0463cfb9bb7860cd7a4d4f68308f3e5b418abf4ad8c3b49ab91bea385c",
+      "warmup": false
+    },
+    {
+      "ok": true,
+      "index": 5,
+      "text_chars": 46,
+      "seed": 1239,
+      "local_seconds": 6.925075300001481,
+      "metrics": {
+        "cache_hit": true,
+        "cache_seconds": 0.0,
+        "inference_seconds": 6.922,
+        "wav_write_seconds": 0.0,
+        "request_seconds": 6.923,
+        "queue_seconds": 0.0,
+        "audio_seconds": 3.04,
+        "text_chars": 46
+      },
+      "ratio": 2.2769736842105264,
+      "wav_sha256": "67a2f1e0b0bb37f1cd928945527af376b82a017a67d48303225f2e8fc235c143",
+      "warmup": false
+    },
+    {
+      "ok": true,
+      "index": 6,
+      "text_chars": 3,
+      "seed": 1240,
+      "local_seconds": 2.7122441999999864,
+      "metrics": {
+        "cache_hit": true,
+        "cache_seconds": 0.0,
+        "inference_seconds": 2.71,
+        "wav_write_seconds": 0.0,
+        "request_seconds": 2.711,
+        "queue_seconds": 0.0,
+        "audio_seconds": 1.12,
+        "text_chars": 3
+      },
+      "ratio": 2.4196428571428568,
+      "wav_sha256": "e4d2d97385cf95418f9bac072f17f1ae8a32872c1933b544a268427f2a7e54fc",
+      "warmup": false
+    },
+    {
+      "ok": true,
+      "index": 7,
+      "text_chars": 45,
+      "seed": 1241,
+      "local_seconds": 8.331279900001391,
+      "metrics": {
+        "cache_hit": true,
+        "cache_seconds": 0.0,
+        "inference_seconds": 8.328,
+        "wav_write_seconds": 0.0,
+        "request_seconds": 8.329,
+        "queue_seconds": 0.0,
+        "audio_seconds": 3.68,
+        "text_chars": 45
+      },
+      "ratio": 2.2630434782608693,
+      "wav_sha256": "481a9c3cc893b63ec551a526acf80c6407cc2e9e83c0d15f1983cd31bb324745",
+      "warmup": false
+    },
+    {
+      "ok": true,
+      "index": 8,
+      "text_chars": 185,
+      "seed": 1242,
+      "local_seconds": 32.10623130000022,
+      "metrics": {
+        "cache_hit": true,
+        "cache_seconds": 0.0,
+        "inference_seconds": 32.1,
+        "wav_write_seconds": 0.002,
+        "request_seconds": 32.103,
+        "queue_seconds": 0.0,
+        "audio_seconds": 14.72,
+        "text_chars": 185
+      },
+      "ratio": 2.1807065217391304,
+      "wav_sha256": "4b8e097a3421ee73038c394981a4354880a36fbb638ea5aadebd601c7b1170e0",
+      "warmup": false
+    },
+    {
+      "ok": true,
+      "index": 9,
+      "text_chars": 72,
+      "seed": 1243,
+      "local_seconds": 8.888589700000011,
+      "metrics": {
+        "cache_hit": true,
+        "cache_seconds": 0.0,
+        "inference_seconds": 8.886,
+        "wav_write_seconds": 0.001,
+        "request_seconds": 8.887,
+        "queue_seconds": 0.0,
+        "audio_seconds": 4.0,
+        "text_chars": 72
+      },
+      "ratio": 2.2215,
+      "wav_sha256": "ed5cb11f7c3de67d495886dab576015e0b911e27bba4213db6daf07106271528",
+      "warmup": false
+    },
+    {
+      "ok": true,
+      "index": 10,
+      "text_chars": 165,
+      "seed": 1244,
+      "local_seconds": 23.05959200000143,
+      "metrics": {
+        "cache_hit": true,
+        "cache_seconds": 0.0,
+        "inference_seconds": 23.056,
+        "wav_write_seconds": 0.001,
+        "request_seconds": 23.057,
+        "queue_seconds": 0.0,
+        "audio_seconds": 10.56,
+        "text_chars": 165
+      },
+      "ratio": 2.183333333333333,
+      "wav_sha256": "cb36814ab3743ac249417adcfe363d272cd136034b1c028938f60f3d60fdf5c9",
+      "warmup": false
+    }
+  ]
+}

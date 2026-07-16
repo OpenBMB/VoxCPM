@@ -153,6 +153,10 @@ def compare_wav_hashes(baseline_results, candidate_results):
             continue
         if baseline_result.get("seed") != candidate_result.get("seed"):
             continue
+        baseline_text = baseline_result.get("text")
+        candidate_text = candidate_result.get("text")
+        if baseline_text is not None and candidate_text is not None and baseline_text != candidate_text:
+            continue
         comparable.append(index)
         if baseline_result["wav_sha256"] != candidate_result["wav_sha256"]:
             mismatches.append(index)
@@ -199,6 +203,7 @@ def run_benchmark(blocks, server_url, warmup_count=0, base_seed=None, save_wav_d
                 {
                     "ok": True,
                     "index": index,
+                    "text": text,
                     "text_chars": len(text),
                     "seed": seed,
                     "local_seconds": local_seconds,

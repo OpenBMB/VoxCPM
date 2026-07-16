@@ -1,0 +1,234 @@
+{
+  "server": {
+    "ok": true,
+    "model_loaded": true,
+    "model_id": "openbmb/VoxCPM2",
+    "optimize": false,
+    "prompt_caches": 0,
+    "last_metrics": null
+  },
+  "summary": {
+    "completed": 8,
+    "failed": 0,
+    "warmups": 2,
+    "avg_inference_seconds": 17.09925,
+    "avg_audio_seconds": 7.42,
+    "avg_ratio": 2.304756434276925,
+    "median_ratio": 2.302,
+    "total_cache_seconds": 0.0,
+    "total_request_seconds": 136.805,
+    "total_inference_seconds": 136.79399999999998
+  },
+  "results": [
+    {
+      "ok": true,
+      "index": 1,
+      "text": "Fíjate nada más lo que acaba de pasar, porque esto que les voy a contar hoy no es un chisme cualquiera de los que se olvidan en tres días.",
+      "text_chars": 138,
+      "seed": 1235,
+      "local_seconds": 39.73854709999978,
+      "metrics": {
+        "cache_hit": false,
+        "cache_seconds": 23.383,
+        "inference_seconds": 16.352,
+        "wav_write_seconds": 0.001,
+        "request_seconds": 39.736,
+        "queue_seconds": 0.0,
+        "audio_seconds": 6.72,
+        "text_chars": 138
+      },
+      "ratio": 2.4333333333333336,
+      "wav_sha256": "a78c101ab220b99f9fc6afdb634888904cb0528a9c4f8b4f7b2ad218159a3a1a",
+      "warmup": true
+    },
+    {
+      "ok": true,
+      "index": 2,
+      "text": "Estamos hablando de una historia que todo el país tenía en la boca desde hace semanas, y que nadie se atrevía a contar completa.",
+      "text_chars": 128,
+      "seed": 1236,
+      "local_seconds": 15.279978999999912,
+      "metrics": {
+        "cache_hit": true,
+        "cache_seconds": 0.0,
+        "inference_seconds": 15.276,
+        "wav_write_seconds": 0.001,
+        "request_seconds": 15.278,
+        "queue_seconds": 0.0,
+        "audio_seconds": 6.72,
+        "text_chars": 128
+      },
+      "ratio": 2.273214285714286,
+      "wav_sha256": "4a3963f3b06ffa767111914b5f224a6fa1dacae181e4ae302e7ea21b237b44fe",
+      "warmup": true
+    },
+    {
+      "ok": true,
+      "index": 3,
+      "text": "Lo que los medios no te están contando, y que nosotros encontramos después de rastrear más de doce fuentes distintas, es que la verdad nunca estuvo en el comunicado oficial.",
+      "text_chars": 173,
+      "seed": 1237,
+      "local_seconds": 21.05049010000039,
+      "metrics": {
+        "cache_hit": true,
+        "cache_seconds": 0.0,
+        "inference_seconds": 21.046,
+        "wav_write_seconds": 0.001,
+        "request_seconds": 21.048,
+        "queue_seconds": 0.0,
+        "audio_seconds": 9.28,
+        "text_chars": 173
+      },
+      "ratio": 2.267887931034483,
+      "wav_sha256": "9222602565b875ba06d1cee7d7c10ba4cd2429d8c6a012fc471f7bdc9dc6b3af",
+      "warmup": false
+    },
+    {
+      "ok": true,
+      "index": 4,
+      "text": "La verdad estaba en el escenario, siete días antes, delante de miles de personas que no entendieron lo que estaban viendo.",
+      "text_chars": 122,
+      "seed": 1238,
+      "local_seconds": 15.089548699999796,
+      "metrics": {
+        "cache_hit": true,
+        "cache_seconds": 0.0,
+        "inference_seconds": 15.086,
+        "wav_write_seconds": 0.001,
+        "request_seconds": 15.087,
+        "queue_seconds": 0.0,
+        "audio_seconds": 6.4,
+        "text_chars": 122
+      },
+      "ratio": 2.3571874999999998,
+      "wav_sha256": "60cfe2376d65e2dc42f321c54863f8dafd9f85bec1280fb2342348cc6664be7e",
+      "warmup": false
+    },
+    {
+      "ok": true,
+      "index": 5,
+      "text": "Aquella noche en Monterrey el ambiente era extraño desde el principio.",
+      "text_chars": 70,
+      "seed": 1239,
+      "local_seconds": 7.437295000000631,
+      "metrics": {
+        "cache_hit": true,
+        "cache_seconds": 0.0,
+        "inference_seconds": 7.434,
+        "wav_write_seconds": 0.0,
+        "request_seconds": 7.435,
+        "queue_seconds": 0.0,
+        "audio_seconds": 3.2,
+        "text_chars": 70
+      },
+      "ratio": 2.323125,
+      "wav_sha256": "8afe2d3b57f6f0f5f71f6f00fca2ae16637992236a9b7c1af0b180c8df12ddc2",
+      "warmup": false
+    },
+    {
+      "ok": true,
+      "index": 6,
+      "text": "Las luces tardaron más de la cuenta, el sonido falló dos veces, y cuando por fin empezó el show, la voz se quebró en la tercera canción. El público pensó que era emoción. No era emoción.",
+      "text_chars": 186,
+      "seed": 1240,
+      "local_seconds": 26.286640299999817,
+      "metrics": {
+        "cache_hit": true,
+        "cache_seconds": 0.0,
+        "inference_seconds": 26.282,
+        "wav_write_seconds": 0.001,
+        "request_seconds": 26.284,
+        "queue_seconds": 0.0,
+        "audio_seconds": 11.2,
+        "text_chars": 186
+      },
+      "ratio": 2.346607142857143,
+      "wav_sha256": "acba97399a29723226aa5c5c967967aaae2267b1d16269a37054b5b15b42fc6e",
+      "warmup": false
+    },
+    {
+      "ok": true,
+      "index": 7,
+      "text": "Tres semanas de movimientos digitales, historias borradas a las tres de la madrugada, indirectas en redes que duraban minutos en línea.",
+      "text_chars": 135,
+      "seed": 1241,
+      "local_seconds": 16.689558500000203,
+      "metrics": {
+        "cache_hit": true,
+        "cache_seconds": 0.0,
+        "inference_seconds": 16.686,
+        "wav_write_seconds": 0.001,
+        "request_seconds": 16.687,
+        "queue_seconds": 0.0,
+        "audio_seconds": 7.36,
+        "text_chars": 135
+      },
+      "ratio": 2.267119565217391,
+      "wav_sha256": "0a6c97542952af00b51d6ac5912a8b280c7fe29470d4c3f4c804b2b1e985678c",
+      "warmup": false
+    },
+    {
+      "ok": true,
+      "index": 8,
+      "text": "Cada pieza del rompecabezas apuntaba al mismo lugar, y sin embargo todos miraban hacia otro lado porque la versión oficial era más cómoda.",
+      "text_chars": 138,
+      "seed": 1242,
+      "local_seconds": 17.48434619999989,
+      "metrics": {
+        "cache_hit": true,
+        "cache_seconds": 0.0,
+        "inference_seconds": 17.48,
+        "wav_write_seconds": 0.001,
+        "request_seconds": 17.482,
+        "queue_seconds": 0.0,
+        "audio_seconds": 7.52,
+        "text_chars": 138
+      },
+      "ratio": 2.3244680851063833,
+      "wav_sha256": "d4f3c1af6d465a4427a8e3226633b7d10e5ee6f0daf28b0cceb3962a53e527bd",
+      "warmup": false
+    },
+    {
+      "ok": true,
+      "index": 9,
+      "text": "Y aquí viene lo que de verdad importa. No se trata de quién dejó a quién, ni de quién publicó primero.",
+      "text_chars": 102,
+      "seed": 1243,
+      "local_seconds": 14.536368699999912,
+      "metrics": {
+        "cache_hit": true,
+        "cache_seconds": 0.0,
+        "inference_seconds": 14.533,
+        "wav_write_seconds": 0.001,
+        "request_seconds": 14.534,
+        "queue_seconds": 0.0,
+        "audio_seconds": 6.4,
+        "text_chars": 102
+      },
+      "ratio": 2.2707812499999998,
+      "wav_sha256": "27bd6ae1e962a2584e30b121057dc3fdaf6b47ec1e7ea25250e35a2847b810f8",
+      "warmup": false
+    },
+    {
+      "ok": true,
+      "index": 10,
+      "text": "Se trata de un patrón que se repite desde hace años en esta industria, y que esta vez quedó grabado en video, con fecha, con hora y con testigos.",
+      "text_chars": 145,
+      "seed": 1244,
+      "local_seconds": 18.250439899999947,
+      "metrics": {
+        "cache_hit": true,
+        "cache_seconds": 0.0,
+        "inference_seconds": 18.247,
+        "wav_write_seconds": 0.001,
+        "request_seconds": 18.248,
+        "queue_seconds": 0.0,
+        "audio_seconds": 8.0,
+        "text_chars": 145
+      },
+      "ratio": 2.280875,
+      "wav_sha256": "ff194b6dc23ca17f873cd7e914b93833811719441456df0d193b1e4ca8633f61",
+      "warmup": false
+    }
+  ]
+}
