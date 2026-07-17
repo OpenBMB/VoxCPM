@@ -1,189 +1,208 @@
-import soundfile as sf
-import numpy as np
 import os
-import re
-from voxcpm_client import DEFAULT_SERVER_URL, VoxCPMServerError, check_server, generate_wav_bytes
+import time
+import traceback
 
-# --- Configura aquí ---
-SCRIPT_FILE   = r"C:\Users\jonhy\Desktop\script.txt"       # cada línea = un short
+import soundfile as sf
+
+from tts_workflow import (
+    build_srt_entries,
+    build_voxcpm_payload,
+    concatenate_wavs,
+    ensure_dirs,
+    get_audio_info,
+    parse_structured_shorts,
+    read_wav,
+    split_text_blocks,
+    write_wav_bytes,
+)
+from voxcpm_client import DEFAULT_SERVER_URL, VoxCPMServerError, check_server, generate_wav_bytes_with_metrics
+
+# --- Configura aqui ---
+SCRIPT_FILE = r"C:\Users\jonhy\Desktop\script.txt"  # cada linea = un short
 REFERENCE_WAV = r"C:\Users\jonhy\Desktop\audio-40s.wav"
-OUTPUT_DIR    = r"C:\Users\jonhy\Desktop\shorts"            # carpeta de salida
-BLOQUES_DIR   = r"C:\Users\jonhy\Desktop\shorts_bloques"    # bloques intermedios
-SRT_OUTPUT    = r"C:\Users\jonhy\Desktop\shorts.srt"
-MODEL_ID      = "openbmb/VoxCPM2"
-SERVER_URL    = DEFAULT_SERVER_URL
+OUTPUT_DIR = r"C:\Users\jonhy\Desktop\shorts"  # carpeta de salida
+BLOQUES_DIR = r"C:\Users\jonhy\Desktop\shorts_bloques"  # bloques intermedios
+SRT_OUTPUT = r"C:\Users\jonhy\Desktop\shorts.srt"
+MODEL_ID = "openbmb/VoxCPM2"
+SERVER_URL = DEFAULT_SERVER_URL
+SCRIPT_ENCODING = "utf-8-sig"
+SRT_ENCODING = "utf-8"
 
 MAX_CHARS = 200  # ~20 segundos por bloque
 CFG_VALUE = 2.0
 INFERENCE_TIMESTEPS = 12
 NORMALIZE = False
+AUDIT_ONLY = False
+METRIC_KEYS = ("cache_seconds", "inference_seconds", "wav_write_seconds", "queue_seconds", "request_seconds")
 
 PROMPT_TEXT = (
-    "Fíjate nada más lo que acaba de pasar... porque esto que les voy a contar hoy no es un chisme cualquiera "
-    "de los que se olvidan en tres días. Estamos hablando de la ruptura que todo México tenía en la boca desde "
-    "el 6 de junio, sí, la de Kenia Os y Peso Pluma, pero lo que los medios no te están contando —y que nosotros "
-    "encontramos después de rastrear más de doce fuentes, tres semanas de movimientos digitales y cada historia "
-    "borrada— es que la verdad no está en el comunicado. La verdad estaba en el escenario, siete días antes, "
-    "cuando Kenia Os se derrumbó frente a miles de personas en Monterrey cantando una canción que describe, "
-    "con nombre y apellido psicológico, exactamente lo que le hicieron."
+    "F\u00edjate nada m\u00e1s lo que acaba de pasar... porque esto que les voy a contar hoy no es un chisme cualquiera "
+    "de los que se olvidan en tres d\u00edas. Estamos hablando de la ruptura que todo M\u00e9xico ten\u00eda en la boca desde "
+    "el 6 de junio, s\u00ed, la de Kenia Os y Peso Pluma, pero lo que los medios no te est\u00e1n contando \u2014y que nosotros "
+    "encontramos despu\u00e9s de rastrear m\u00e1s de doce fuentes, tres semanas de movimientos digitales y cada historia "
+    "borrada\u2014 es que la verdad no est\u00e1 en el comunicado. La verdad estaba en el escenario, siete d\u00edas antes, "
+    "cuando Kenia Os se derrumb\u00f3 frente a miles de personas en Monterrey cantando una canci\u00f3n que describe, "
+    "con nombre y apellido psicol\u00f3gico, exactamente lo que le hicieron."
 )
 # ----------------------
 
 
-def dividir_en_bloques(texto, max_chars=MAX_CHARS):
-    frases = re.split(r'(?<=[.!?])\s+', texto.strip())
-    bloques = []
-    actual = ""
-    for frase in frases:
-        candidato = (actual + " " + frase).strip() if actual else frase
-        if len(candidato) <= max_chars:
-            actual = candidato
-        else:
-            if actual:
-                bloques.append(actual)
-            if len(frase) > max_chars:
-                partes = re.split(r'(?<=[,;])\s+', frase)
-                sub = ""
-                for parte in partes:
-                    c = (sub + " " + parte).strip() if sub else parte
-                    if len(c) <= max_chars:
-                        sub = c
-                    else:
-                        if sub:
-                            bloques.append(sub)
-                        sub = parte
-                actual = sub
-            else:
-                actual = frase
-    if actual:
-        bloques.append(actual)
-    return bloques
+def main():
+    total_start = time.perf_counter()
+    shorts = parse_structured_shorts(SCRIPT_FILE, encoding=SCRIPT_ENCODING)
+    print(f"Se encontraron {len(shorts)} shorts en '{SCRIPT_FILE}'")
 
+    def build_payload(block):
+        return build_voxcpm_payload(
+            text=block,
+            model_id=MODEL_ID,
+            prompt_text=PROMPT_TEXT,
+            reference_wav=REFERENCE_WAV,
+            cfg_value=CFG_VALUE,
+            inference_timesteps=INFERENCE_TIMESTEPS,
+            normalize=NORMALIZE,
+        )
 
-def segundos_a_srt(s):
-    h = int(s // 3600)
-    m = int((s % 3600) // 60)
-    sec = int(s % 60)
-    ms = int(round((s % 1) * 1000))
-    return f"{h:02d}:{m:02d}:{sec:02d},{ms:03d}"
+    def block_path_for(short_idx, block_idx):
+        return os.path.join(BLOQUES_DIR, f"short_{short_idx:02d}_bloque_{block_idx:03d}.wav")
 
+    ensure_dirs(OUTPUT_DIR, BLOQUES_DIR)
 
-# Lee el archivo: formato estructurado con SHORT N / Título / Descripción / Script:
-def parsear_shorts(ruta):
-    with open(ruta, "r", encoding="ansi") as f:
-        contenido = f.read()
-
-    # Divide por separadores --- o por **SHORT N**
-    bloques = re.split(r'^---\s*$', contenido, flags=re.MULTILINE)
-    shorts = []
-    for bloque in bloques:
-        bloque = bloque.strip()
-        if not bloque:
-            continue
-        # Extrae el texto en la misma línea que "Script:"
-        match = re.search(r'^Script:\s*(.+)', bloque, re.MULTILINE)
-        if match:
-            texto = match.group(1).strip()
-            if texto:
-                shorts.append(texto)
-    return shorts
-
-shorts = parsear_shorts(SCRIPT_FILE)
-print(f"Se encontraron {len(shorts)} shorts en '{SCRIPT_FILE}'")
-
-# Comprueba el servidor persistente
-try:
-    health = check_server(SERVER_URL)
-    print(f"\nServidor VoxCPM listo: {health.get('model_id', MODEL_ID)}")
-except VoxCPMServerError as e:
-    print(f"\nERROR: {e}")
-    raise SystemExit(1)
-
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-os.makedirs(BLOQUES_DIR, exist_ok=True)
-
-srt_sections = []  # lista de (titulo, lista de (texto, duracion))
-
-for short_idx, texto_short in enumerate(shorts, start=1):
-    print(f"\n{'='*60}")
-    print(f"SHORT {short_idx}/{len(shorts)}: {texto_short[:80]}{'...' if len(texto_short) > 80 else ''}")
-    print(f"{'='*60}")
-
-    bloques = dividir_en_bloques(texto_short)
-    print(f"  {len(bloques)} bloques de máx. {MAX_CHARS} chars")
-
-    fragmentos = []
-    textos_bloque = []
-    sample_rate = None
-
-    for b_idx, bloque in enumerate(bloques, start=1):
-        bloque_path = os.path.join(BLOQUES_DIR, f"short_{short_idx:02d}_bloque_{b_idx:03d}.wav")
-
-        if os.path.exists(bloque_path):
-            print(f"  [{b_idx}/{len(bloques)}] Ya existe, cargando...")
-            wav, sr = sf.read(bloque_path)
-            sample_rate = sample_rate or sr
-            fragmentos.append(wav)
-            textos_bloque.append(bloque)
-            continue
-
-        print(f"\n  [{b_idx}/{len(bloques)}] Generando ({len(bloque)} caracteres)...")
-        print(f"    → {bloque[:80]}{'...' if len(bloque) > 80 else ''}")
-
-        try:
-            wav_bytes = generate_wav_bytes(
-                {
-                    "text": bloque,
-                    "model_id": MODEL_ID,
-                    "prompt_text": PROMPT_TEXT,
-                    "prompt_wav_path": REFERENCE_WAV,
-                    "reference_wav_path": REFERENCE_WAV,
-                    "cfg_value": CFG_VALUE,
-                    "inference_timesteps": INFERENCE_TIMESTEPS,
-                    "normalize": NORMALIZE,
-                    "denoise": False,
-                    "trim_silence_vad": False,
-                },
-                SERVER_URL,
+    if AUDIT_ONLY:
+        total = {"total": 0, "reusable": 0, "missing": 0}
+        for short_idx, short_text in enumerate(shorts, start=1):
+            blocks = split_text_blocks(short_text, MAX_CHARS)
+            reusable = sum(
+                1 for block_idx in range(1, len(blocks) + 1) if os.path.exists(block_path_for(short_idx, block_idx))
             )
-            with open(bloque_path, "wb") as f:
-                f.write(wav_bytes)
-            wav, sr = sf.read(bloque_path)
-            sample_rate = sample_rate or sr
-            fragmentos.append(wav)
-            textos_bloque.append(bloque)
-            print(f"    ✓ Guardado: {bloque_path}")
-        except Exception as e:
-            print(f"    ✗ Error: {e}")
-            import traceback; traceback.print_exc()
+            total["total"] += len(blocks)
+            total["reusable"] += reusable
+            total["missing"] += len(blocks) - reusable
+        print(
+            "Auditoria cache: " f"{total['reusable']} reutilizables, {total['missing']} nuevos, {total['total']} total"
+        )
+        return
 
-    if not fragmentos:
-        print(f"  ⚠ Short {short_idx} sin fragmentos, saltando.")
-        continue
+    try:
+        health = check_server(SERVER_URL)
+        print(f"\nServidor VoxCPM listo: {health.get('model_id', MODEL_ID)}")
+        print(f"Caches de voz activas: {health.get('prompt_caches', 0)}")
+    except VoxCPMServerError as e:
+        print(f"\nERROR: {e}")
+        raise SystemExit(1) from e
 
-    # Concatena los bloques del short en un solo audio
-    audio_short = np.concatenate(fragmentos)
-    short_path = os.path.join(OUTPUT_DIR, f"short_{short_idx}.wav")
-    sf.write(short_path, audio_short, sample_rate)
-    print(f"\n  ✓ Audio guardado: {short_path}")
+    srt_sections = []
+    generated_count = 0
+    reused_count = 0
+    failed_count = 0
+    generated_seconds = 0.0
+    metric_totals = {key: 0.0 for key in METRIC_KEYS}
+    metric_count = 0
 
-    # Acumula info para el SRT
-    srt_sections.append((f"Short {short_idx}", textos_bloque, fragmentos, sample_rate))
+    for short_idx, short_text in enumerate(shorts, start=1):
+        print(f"\n{'=' * 60}")
+        print(f"SHORT {short_idx}/{len(shorts)}: {short_text[:80]}{'...' if len(short_text) > 80 else ''}")
+        print(f"{'=' * 60}")
 
-# Genera el SRT unificado
-srt_lines = []
-for titulo, textos, wavs, section_sr in srt_sections:
-    srt_lines.append(f"#{titulo}\n")
-    cursor = 0.0
-    for idx, (texto, wav) in enumerate(zip(textos, wavs), start=1):
-        duracion = len(wav) / section_sr
-        inicio = segundos_a_srt(cursor)
-        fin    = segundos_a_srt(cursor + duracion)
-        srt_lines.append(f"{idx}\n{inicio} --> {fin}\n{texto}\n")
-        cursor += duracion
+        blocks = split_text_blocks(short_text, MAX_CHARS)
+        print(f"  {len(blocks)} bloques de max. {MAX_CHARS} chars")
 
-with open(SRT_OUTPUT, "w", encoding="utf-8") as f:
-    f.write("\n".join(srt_lines))
+        fragments = []
+        srt_entries = []
+        sample_rate = None
 
-print(f"\n✓ SRT guardado en: {SRT_OUTPUT}")
-print(f"✓ Audios en: {OUTPUT_DIR}")
+        for block_idx, block in enumerate(blocks, start=1):
+            block_path = block_path_for(short_idx, block_idx)
+
+            if os.path.exists(block_path):
+                info = get_audio_info(block_path)
+                wav, sr = read_wav(block_path)
+                sample_rate = sample_rate or sr
+                fragments.append(wav)
+                srt_entries.append((block, info.duration))
+                reused_count += 1
+                print(f"  [{block_idx}/{len(blocks)}] Reutilizado ({info.duration:.2f}s), cargando...")
+                continue
+
+            payload = build_payload(block)
+            print(f"\n  [{block_idx}/{len(blocks)}] Generando ({len(block)} caracteres)...")
+            print(f"    -> {block[:80]}{'...' if len(block) > 80 else ''}")
+
+            try:
+                request_start = time.perf_counter()
+                wav_bytes, metrics = generate_wav_bytes_with_metrics(
+                    payload,
+                    SERVER_URL,
+                )
+                elapsed = time.perf_counter() - request_start
+                write_wav_bytes(block_path, wav_bytes)
+
+                info = get_audio_info(block_path)
+                wav, sr = read_wav(block_path)
+                sample_rate = sample_rate or sr
+                fragments.append(wav)
+                srt_entries.append((block, info.duration))
+                generated_count += 1
+                generated_seconds += elapsed
+                if metrics:
+                    metric_count += 1
+                    for key in METRIC_KEYS:
+                        metric_totals[key] += float(metrics.get(key, 0.0))
+                    print(
+                        f"    OK Guardado: {block_path} ({info.duration:.2f}s audio, {elapsed:.2f}s local | "
+                        f"cache {metrics.get('cache_seconds', 0):.2f}s, "
+                        f"inferencia {metrics.get('inference_seconds', 0):.2f}s, "
+                        f"wav {metrics.get('wav_write_seconds', 0):.2f}s, "
+                        f"cola {metrics.get('queue_seconds', 0):.2f}s)"
+                    )
+                else:
+                    print(f"    OK Guardado: {block_path} ({info.duration:.2f}s audio, {elapsed:.2f}s generacion)")
+            except Exception as e:
+                print(f"    ERROR: {e}")
+                traceback.print_exc()
+                failed_count += 1
+
+        if not fragments:
+            print(f"  Short {short_idx} sin fragmentos, saltando.")
+            continue
+
+        audio_short = concatenate_wavs(fragments)
+        short_path = os.path.join(OUTPUT_DIR, f"short_{short_idx}.wav")
+        sf.write(short_path, audio_short, sample_rate)
+        print(f"\n  OK Audio guardado: {short_path}")
+        srt_sections.append((f"Short {short_idx}", srt_entries))
+
+    srt_lines = []
+    for title, entries in srt_sections:
+        srt_lines.append(f"#{title}\n")
+        srt_lines.extend(build_srt_entries(entries))
+
+    with open(SRT_OUTPUT, "w", encoding=SRT_ENCODING) as f:
+        f.write("\n".join(srt_lines))
+
+    total_elapsed = time.perf_counter() - total_start
+    avg = generated_seconds / generated_count if generated_count else 0.0
+    print(f"\nOK SRT guardado en: {SRT_OUTPUT}")
+    print(f"OK Audios en: {OUTPUT_DIR}")
+    print(
+        "Resumen: "
+        f"{generated_count} generados, {reused_count} reutilizados, "
+        f"{failed_count} fallidos, {total_elapsed:.2f}s total, {avg:.2f}s promedio/bloque nuevo"
+    )
+    if metric_count:
+        print(
+            "Cuellos servidor: "
+            f"cache {metric_totals['cache_seconds']:.2f}s total "
+            f"({metric_totals['cache_seconds'] / metric_count:.2f}s prom), "
+            f"inferencia {metric_totals['inference_seconds']:.2f}s total "
+            f"({metric_totals['inference_seconds'] / metric_count:.2f}s prom), "
+            f"wav {metric_totals['wav_write_seconds']:.2f}s total "
+            f"({metric_totals['wav_write_seconds'] / metric_count:.2f}s prom), "
+            f"cola {metric_totals['queue_seconds']:.2f}s total "
+            f"({metric_totals['queue_seconds'] / metric_count:.2f}s prom), "
+            f"request servidor {metric_totals['request_seconds']:.2f}s total"
+        )
+
+
+if __name__ == "__main__":
+    main()

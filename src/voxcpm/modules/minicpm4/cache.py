@@ -26,6 +26,12 @@ class StaticKVCache:
             device=device,
             dtype=dtype,
         )
+        # Buffer preallocated para construir la mascara de atencion sin un
+        # torch.arange nuevo por capa y por paso.
+        # Nota: se probo atender solo sobre una ventana de posiciones validas
+        # (slice del cache); fue ~12% MAS LENTO (el slice no contiguo cae en un
+        # kernel de SDPA peor) y no bit-exact, asi que se descarto.
+        self.position_arange = torch.arange(max_length, device=device)
         self.current_length = 0
 
     def get_layer_cache(self, layer_idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -40,8 +46,9 @@ class StaticKVCache:
         return ret
 
     def fill_caches(self, kv_caches: List[Tuple[torch.Tensor, torch.Tensor]]):
+        # No hace falta zero_(): las posiciones > current_length quedan siempre
+        # excluidas por la mascara de atencion, y las <= se sobreescriben aqui.
         self.current_length = kv_caches[0][0].size(2)
-        self.kv_cache.zero_()
         for i in range(self.num_layers):
             self.kv_cache[0, i, :, :, : self.current_length, :] = kv_caches[i][0]
             self.kv_cache[1, i, :, :, : self.current_length, :] = kv_caches[i][1]

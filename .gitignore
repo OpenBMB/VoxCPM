@@ -5,3 +5,6 @@ voxcpm.egg-info
 .DS_Store
 ./pretrained_models/
 app_local.py
+.devswarm-temp/
+benchmark_*.json
+benchmarks/escucha_*/
