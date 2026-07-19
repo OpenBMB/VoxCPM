@@ -51,6 +51,7 @@ from .utils import (
     mask_multichar_chinese_tokens,
     next_and_close,
     pick_runtime_dtype,
+    report_generation_completion,
     resolve_runtime_device,
 )
 
@@ -830,7 +831,10 @@ class VoxCPMModel(nn.Module):
         self.residual_lm.kv_cache.fill_caches(residual_kv_cache_tuple)
         residual_hidden = residual_enc_outputs[:, -1, :]
 
-        for i in tqdm(range(max_len)):
+        generated_steps = 0
+        stopped_by_model = False
+        for i in tqdm(range(max_len), desc="Generating audio"):
+            generated_steps = i + 1
             dit_hidden_1 = self.lm_to_dit_proj(lm_hidden)  # [b, h_dit]
             dit_hidden_2 = self.res_to_dit_proj(residual_hidden)  # [b, h_dit]
             dit_hidden = dit_hidden_1 + dit_hidden_2  # [b, h_dit]
@@ -860,6 +864,7 @@ class VoxCPMModel(nn.Module):
 
             stop_flag = self.stop_head(self.stop_actn(self.stop_proj(lm_hidden))).argmax(dim=-1)[0].cpu().item()
             if i > min_len and stop_flag == 1:
+                stopped_by_model = True
                 break
 
             lm_hidden = self.base_lm.forward_step(
@@ -872,6 +877,7 @@ class VoxCPMModel(nn.Module):
                 torch.tensor([self.residual_lm.kv_cache.step()], device=curr_embed.device),
             ).clone()
 
+        report_generation_completion(generated_steps, max_len, stopped_by_model)
         if not streaming:
             pred_feat_seq = torch.cat(pred_feat_seq, dim=1)  # b, t, p, d
             feat_pred = rearrange(pred_feat_seq, "b t p d -> b d (t p)", b=B, p=self.patch_size)
