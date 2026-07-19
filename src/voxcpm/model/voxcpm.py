@@ -38,6 +38,7 @@ except ImportError:
 from tqdm import tqdm
 from transformers import LlamaTokenizerFast
 
+from ..prompt_validation import validate_prompt_feature_ratio
 from ..modules.audiovae import AudioVAE, AudioVAEConfig
 from ..modules.layers import ScalarQuantizationLayer
 from ..modules.layers.lora import apply_lora_to_named_linear_modules
@@ -51,7 +52,9 @@ from .utils import (
     mask_multichar_chinese_tokens,
     next_and_close,
     pick_runtime_dtype,
+    report_generation_completion,
     resolve_runtime_device,
+    should_retry_badcase,
 )
 
 
@@ -371,6 +374,7 @@ class VoxCPMModel(nn.Module):
         retry_badcase_ratio_threshold: float = 6.0,  # setting acceptable ratio of audio length to text length (for badcase detection)
         streaming: bool = False,
         seed: Optional[int] = None,
+        prompt_validation: str = "warn",
     ) -> Generator[torch.Tensor, None, None]:
         if retry_badcase and streaming:
             warnings.warn("Retry on bad cases is not supported in streaming mode, setting retry_badcase=False.")
@@ -433,6 +437,11 @@ class VoxCPMModel(nn.Module):
                 self.patch_size,
             ).permute(1, 2, 0)
             audio_length = audio_feat.size(0)
+            validate_prompt_feature_ratio(
+                audio_length,
+                len(self.text_tokenizer(prompt_text)),
+                mode=prompt_validation,
+            )
             text_pad_token = torch.zeros(audio_length, dtype=torch.int32, device=text_token.device)
             text_token = torch.cat([text_token, text_pad_token])
             audio_pad_feat = torch.zeros(
@@ -485,19 +494,17 @@ class VoxCPMModel(nn.Module):
                 break
             else:
                 latent_pred, pred_audio_feat = next_and_close(inference_result)
-                if retry_badcase:
-                    if pred_audio_feat.shape[0] >= target_text_length * retry_badcase_ratio_threshold:
-                        print(
-                            f"  Badcase detected, audio_text_ratio={pred_audio_feat.shape[0] / target_text_length}, retrying...",
-                            file=sys.stderr,
-                        )
-                        retry_badcase_times += 1
-                        current_seed += 1
-                        continue
-                    else:
-                        break
-                else:
-                    break
+                if retry_badcase and should_retry_badcase(
+                    pred_audio_feat.shape[0],
+                    target_text_length,
+                    retry_badcase_ratio_threshold,
+                    retry_badcase_times + 1,
+                    retry_badcase_max_times,
+                ):
+                    retry_badcase_times += 1
+                    current_seed += 1
+                    continue
+                break
 
         if not streaming:
             self.last_successful_seed = last_attempt_seed
@@ -509,6 +516,7 @@ class VoxCPMModel(nn.Module):
         self,
         prompt_text: str,
         prompt_wav_path: str,
+        prompt_validation: str = "warn",
     ):
         """
         Build prompt cache for subsequent fast generation.
@@ -549,6 +557,11 @@ class VoxCPMModel(nn.Module):
         ).permute(
             1, 2, 0
         )  # (D, T, P)
+        validate_prompt_feature_ratio(
+            audio_feat.size(0),
+            len(self.text_tokenizer(prompt_text)),
+            mode=prompt_validation,
+        )
         # build prompt cache - only save raw text and audio features
         prompt_cache = {
             "prompt_text": prompt_text,
@@ -721,19 +734,17 @@ class VoxCPMModel(nn.Module):
                 break
             else:
                 latent_pred, pred_audio_feat = next_and_close(inference_result)
-                if retry_badcase:
-                    if pred_audio_feat.shape[0] >= target_text_length * retry_badcase_ratio_threshold:
-                        print(
-                            f"  Badcase detected, audio_text_ratio={pred_audio_feat.shape[0] / target_text_length}, retrying...",
-                            file=sys.stderr,
-                        )
-                        retry_badcase_times += 1
-                        current_seed += 1
-                        continue
-                    else:
-                        break
-                else:
-                    break
+                if retry_badcase and should_retry_badcase(
+                    pred_audio_feat.shape[0],
+                    target_text_length,
+                    retry_badcase_ratio_threshold,
+                    retry_badcase_times + 1,
+                    retry_badcase_max_times,
+                ):
+                    retry_badcase_times += 1
+                    current_seed += 1
+                    continue
+                break
         if not streaming:
             self.last_successful_seed = last_attempt_seed
             decode_audio = self.audio_vae.decode(latent_pred.to(torch.float32))
@@ -830,7 +841,10 @@ class VoxCPMModel(nn.Module):
         self.residual_lm.kv_cache.fill_caches(residual_kv_cache_tuple)
         residual_hidden = residual_enc_outputs[:, -1, :]
 
-        for i in tqdm(range(max_len)):
+        generated_steps = 0
+        stopped_by_model = False
+        for i in tqdm(range(max_len), desc="Generating audio"):
+            generated_steps = i + 1
             dit_hidden_1 = self.lm_to_dit_proj(lm_hidden)  # [b, h_dit]
             dit_hidden_2 = self.res_to_dit_proj(residual_hidden)  # [b, h_dit]
             dit_hidden = dit_hidden_1 + dit_hidden_2  # [b, h_dit]
@@ -860,6 +874,7 @@ class VoxCPMModel(nn.Module):
 
             stop_flag = self.stop_head(self.stop_actn(self.stop_proj(lm_hidden))).argmax(dim=-1)[0].cpu().item()
             if i > min_len and stop_flag == 1:
+                stopped_by_model = True
                 break
 
             lm_hidden = self.base_lm.forward_step(
@@ -872,6 +887,7 @@ class VoxCPMModel(nn.Module):
                 torch.tensor([self.residual_lm.kv_cache.step()], device=curr_embed.device),
             ).clone()
 
+        report_generation_completion(generated_steps, max_len, stopped_by_model)
         if not streaming:
             pred_feat_seq = torch.cat(pred_feat_seq, dim=1)  # b, t, p, d
             feat_pred = rearrange(pred_feat_seq, "b t p d -> b d (t p)", b=B, p=self.patch_size)

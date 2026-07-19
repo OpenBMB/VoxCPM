@@ -197,6 +197,7 @@ class VoxCPM:
         retry_badcase_ratio_threshold: float = 6.0,
         streaming: bool = False,
         seed: Optional[int] = None,
+        prompt_validation: str = "error",
     ) -> Generator[np.ndarray, None, None]:
         """Synthesize speech for the given text and return a single waveform.
 
@@ -220,6 +221,8 @@ class VoxCPM:
             retry_badcase_ratio_threshold: Threshold for audio-to-text ratio.
             streaming: Whether to return a generator of audio chunks.
             seed: Optional random seed for reproducibility.
+            prompt_validation: Prompt audio/text length policy: ``"off"``,
+                ``"warn"``, or ``"error"`` (default).
         Returns:
             Generator of numpy.ndarray: 1D waveform array (float32) on CPU.
             Yields audio chunks for each generation step if ``streaming=True``,
@@ -269,11 +272,13 @@ class VoxCPM:
                         prompt_text=prompt_text,
                         prompt_wav_path=actual_prompt_path,
                         reference_wav_path=actual_ref_path,
+                        prompt_validation=prompt_validation,
                     )
                 else:
                     fixed_prompt_cache = self.tts_model.build_prompt_cache(
                         prompt_text=prompt_text,
                         prompt_wav_path=actual_prompt_path,
+                        prompt_validation=prompt_validation,
                     )
             else:
                 fixed_prompt_cache = None

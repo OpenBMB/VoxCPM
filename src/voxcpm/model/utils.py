@@ -1,4 +1,6 @@
 import os
+import sys
+import warnings
 from typing import List, Optional
 import torch
 from transformers import PreTrainedTokenizer
@@ -35,6 +37,51 @@ def apply_generation_seed(seed: int) -> None:
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+
+
+def should_retry_badcase(
+    generated_audio_length: int,
+    target_text_length: int,
+    ratio_threshold: float,
+    attempt_number: int,
+    max_attempts: int,
+) -> bool:
+    """Report a bad case and return whether another attempt remains."""
+    if target_text_length < 1:
+        raise ValueError("target text must produce at least one token")
+
+    if generated_audio_length < target_text_length * ratio_threshold:
+        return False
+
+    ratio = generated_audio_length / target_text_length
+    if attempt_number < max_attempts:
+        print(
+            f"  Badcase detected, audio_text_ratio={ratio}; "
+            f"retrying with a new seed ({attempt_number}/{max_attempts})...",
+            file=sys.stderr,
+        )
+        return True
+
+    warnings.warn(
+        f"Badcase persisted after {max_attempts} generation attempt(s) "
+        f"(audio_text_ratio={ratio}). Returning the final attempt; the audio may be truncated, "
+        "repetitive, or inconsistent with the prompt.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
+    return False
+
+
+def report_generation_completion(generated_steps: int, max_steps: int, stopped_by_model: bool) -> None:
+    """Make normal model-directed early stopping explicit in terminal logs."""
+    if stopped_by_model:
+        message = (
+            f"Generation completed normally: {generated_steps}/{max_steps} steps "
+            "(model stop token predicted)."
+        )
+    else:
+        message = f"Generation completed: {generated_steps}/{max_steps} steps (max_len reached without a stop token)."
+    print(message, file=sys.stderr)
 
 
 def mask_multichar_chinese_tokens(tokenizer: PreTrainedTokenizer):

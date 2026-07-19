@@ -13,6 +13,11 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 import voxcpm
 from voxcpm.model.utils import resolve_runtime_device
+from voxcpm.prompt_validation import (
+    PromptMismatchError,
+    audio_file_sha256,
+    validate_prompt_transcript,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -272,6 +277,17 @@ class VoxCPMDemo:
         )
         return res[0]["text"].split("|>")[-1]
 
+    def prompt_wav_recognition_with_hash(self, prompt_wav: str) -> tuple[str, str]:
+        """Transcribe one immutable audio file and return its text and SHA-256."""
+        before_hash = audio_file_sha256(prompt_wav)
+        text = self.prompt_wav_recognition(prompt_wav).strip()
+        after_hash = audio_file_sha256(prompt_wav)
+        if before_hash != after_hash:
+            raise PromptMismatchError("Reference audio changed while ASR was running; please transcribe it again.")
+        if not text:
+            raise PromptMismatchError("ASR returned an empty transcript; Ultimate Cloning cannot continue safely.")
+        return text, after_hash
+
     def _build_generate_kwargs(
         self,
         *,
@@ -283,6 +299,7 @@ class VoxCPMDemo:
         denoise: bool,
         inference_timesteps: int = 10,
         seed: Optional[int] = None,
+        prompt_validation: str = "error",
     ) -> dict:
         generate_kwargs = dict(
             text=final_text,
@@ -292,6 +309,7 @@ class VoxCPMDemo:
             normalize=do_normalize,
             denoise=denoise,
             seed=seed,
+            prompt_validation=prompt_validation,
         )
         if prompt_text_clean and audio_path:
             generate_kwargs["prompt_wav_path"] = audio_path
@@ -309,6 +327,7 @@ class VoxCPMDemo:
         denoise: bool = True,
         inference_timesteps: int = 10,
         seed: Optional[int] = None,
+        prompt_validation: str = "error",
     ) -> Tuple[int, np.ndarray, Optional[int]]:
         current_model = self.get_or_load_voxcpm()
 
@@ -342,6 +361,7 @@ class VoxCPMDemo:
             denoise=denoise,
             inference_timesteps=inference_timesteps,
             seed=seed,
+            prompt_validation=prompt_validation,
         )
         wav = current_model.generate(**generate_kwargs)
         last_successful_seed = getattr(current_model.tts_model, "last_successful_seed", seed)
@@ -373,6 +393,8 @@ def create_demo_interface(demo: VoxCPMDemo):
         ref_wav: Optional[str],
         use_prompt_text: bool,
         prompt_text_value: str,
+        recognized_audio_hash: Optional[str],
+        recognized_prompt_text: Optional[str],
         cfg_value: float,
         do_normalize: bool,
         denoise: bool,
@@ -382,6 +404,33 @@ def create_demo_interface(demo: VoxCPMDemo):
         actual_prompt_text = prompt_text_value.strip() if use_prompt_text else ""
         actual_control = "" if use_prompt_text else control_instruction
         seed = _coerce_seed(seed_value)
+        verified_audio_hash = recognized_audio_hash
+        verified_prompt_text = recognized_prompt_text
+
+        if use_prompt_text:
+            if not ref_wav:
+                raise gr.Error("Ultimate Cloning requires reference audio.")
+            if not actual_prompt_text:
+                raise gr.Error("Ultimate Cloning requires a non-empty prompt transcript.")
+            try:
+                current_hash = audio_file_sha256(ref_wav)
+                if current_hash != recognized_audio_hash or not recognized_prompt_text:
+                    logger.info("Prompt ASR state is stale or missing; transcribing the current audio again.")
+                    verified_prompt_text, verified_audio_hash = demo.prompt_wav_recognition_with_hash(ref_wav)
+                distance = validate_prompt_transcript(
+                    audio_path=ref_wav,
+                    prompt_text=actual_prompt_text,
+                    recognized_text=verified_prompt_text,
+                    recognized_audio_hash=verified_audio_hash,
+                )
+                logger.info(f"Prompt transcript validation passed (normalized distance={distance:.3f}).")
+            except PromptMismatchError as exc:
+                raise gr.Error(str(exc)) from exc
+            except Exception as exc:
+                raise gr.Error(f"ASR prompt verification failed: {exc}") from exc
+        else:
+            verified_audio_hash = None
+            verified_prompt_text = None
         sr, wav_np, last_successful_seed = demo.generate_tts_audio(
             text_input=text,
             control_instruction=actual_control,
@@ -392,8 +441,9 @@ def create_demo_interface(demo: VoxCPMDemo):
             denoise=denoise,
             inference_timesteps=int(dit_steps),
             seed=seed,
+            prompt_validation="error" if use_prompt_text else "warn",
         )
-        return (sr, wav_np), last_successful_seed
+        return (sr, wav_np), last_successful_seed, verified_audio_hash, verified_prompt_text
 
     def _on_toggle_instant(checked):
         """Instant UI toggle — no ASR, no blocking."""
@@ -408,19 +458,22 @@ def create_demo_interface(demo: VoxCPMDemo):
         )
 
     def _run_asr_if_needed(checked, audio_path):
-        """Run ASR after the UI has updated. Only when toggled ON."""
+        """Transcribe the current audio and bind the result to its SHA-256."""
         if not checked or not audio_path:
-            return gr.update()
+            return gr.update(value=""), None, None
         try:
             logger.info("Running ASR on reference audio...")
-            asr_text = demo.prompt_wav_recognition(audio_path)
+            asr_text, audio_hash = demo.prompt_wav_recognition_with_hash(audio_path)
             logger.info(f"ASR result: {asr_text[:60]}...")
-            return gr.update(value=asr_text)
+            return gr.update(value=asr_text), audio_hash, asr_text
         except Exception as e:
             logger.warning(f"ASR recognition failed: {e}")
-            return gr.update(value="")
+            return gr.update(value=""), None, None
 
     with gr.Blocks() as interface:
+        prompt_audio_hash_state = gr.State(value=None)
+        recognized_prompt_text_state = gr.State(value=None)
+
         gr.HTML(
             '<div class="logo-container">'
             '<img src="/gradio_api/file=assets/voxcpm_logo.png" alt="VoxCPM Logo">'
@@ -518,7 +571,13 @@ def create_demo_interface(demo: VoxCPMDemo):
         ).then(
             fn=_run_asr_if_needed,
             inputs=[show_prompt_text, reference_wav],
-            outputs=[prompt_text],
+            outputs=[prompt_text, prompt_audio_hash_state, recognized_prompt_text_state],
+        )
+
+        reference_wav.change(
+            fn=_run_asr_if_needed,
+            inputs=[show_prompt_text, reference_wav],
+            outputs=[prompt_text, prompt_audio_hash_state, recognized_prompt_text_state],
         )
 
         random_seed.change(
@@ -540,13 +599,15 @@ def create_demo_interface(demo: VoxCPMDemo):
                 reference_wav,
                 show_prompt_text,
                 prompt_text,
+                prompt_audio_hash_state,
+                recognized_prompt_text_state,
                 cfg_value,
                 DoNormalizeText,
                 DoDenoisePromptAudio,
                 dit_steps,
                 seed_value,
             ],
-            outputs=[audio_output, seed_value],
+            outputs=[audio_output, seed_value, prompt_audio_hash_state, recognized_prompt_text_state],
             show_progress=True,
             api_name="generate",
         )
