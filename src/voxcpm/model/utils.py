@@ -1,4 +1,5 @@
 import os
+import sys
 from typing import List, Optional
 import torch
 from transformers import PreTrainedTokenizer
@@ -35,6 +36,18 @@ def apply_generation_seed(seed: int) -> None:
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+
+
+def report_generation_completion(generated_steps: int, max_steps: int, stopped_by_model: bool) -> None:
+    """Make normal model-directed early stopping explicit in terminal logs."""
+    if stopped_by_model:
+        message = (
+            f"Generation completed normally: {generated_steps}/{max_steps} steps "
+            "(model stop token predicted)."
+        )
+    else:
+        message = f"Generation completed: {generated_steps}/{max_steps} steps (max_len reached without a stop token)."
+    print(message, file=sys.stderr)
 
 
 def mask_multichar_chinese_tokens(tokenizer: PreTrainedTokenizer):
