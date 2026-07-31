@@ -159,9 +159,7 @@ for _d in _I18N_TRANSLATIONS.values():
 
 I18N = gr.I18n(**_I18N_TRANSLATIONS)
 
-DEFAULT_TARGET_TEXT = (
-    "VoxCPM2 is a creative multilingual TTS model from ModelBest, " "designed to generate highly realistic speech."
-)
+DEFAULT_TARGET_TEXT = "轻轻地你走了，不带走一片云彩。"
 
 _CUSTOM_CSS = """
 .logo-container {
@@ -225,10 +223,21 @@ _APP_THEME = gr.themes.Soft(
 
 
 class VoxCPMDemo:
-    def __init__(self, model_id: str = "openbmb/VoxCPM2", device: str = "auto") -> None:
+    def __init__(
+        self,
+        model_id: str = "openbmb/VoxCPM2",
+        device: str = "auto",
+        load_denoiser: bool = True,
+        backend: str = "python",
+        cli_bin_path: Optional[str] = None,
+        cli_base_lm: Optional[str] = None,
+        cli_acoustic: Optional[str] = None,
+        cli_timesteps: int = 7,
+    ) -> None:
         self.device = resolve_runtime_device(device, "cuda")
         logger.info(f"Running VoxCPM on device: {self.device}")
         self.optimize = self.device.startswith("cuda")
+        self.load_denoiser = load_denoiser
 
         self.asr_model_id = "iic/SenseVoiceSmall"
         self.asr_device = "cuda:0" if self.device.startswith("cuda") else "cpu"
@@ -237,12 +246,29 @@ class VoxCPMDemo:
         self.voxcpm_model: Optional[voxcpm.VoxCPM] = None
         self._model_id = model_id
 
+        # --- CLI backend (llama.cpp-omni) ---
+        self.backend = backend
+        self.cli_bin_path = cli_bin_path
+        self.cli_base_lm = cli_base_lm
+        self.cli_acoustic = cli_acoustic
+        self.cli_timesteps = cli_timesteps
+        if self.backend == "cli":
+            for label, path in [("cli-bin", self.cli_bin_path), ("cli-base-lm", self.cli_base_lm), ("cli-acoustic", self.cli_acoustic)]:
+                if not path or not os.path.isfile(path):
+                    raise FileNotFoundError(f"CLI backend requires --{label}, file not found: {path}")
+            logger.info(f"Backend: CLI (llama.cpp-omni) | timesteps={self.cli_timesteps}")
+            logger.info(f"  bin:      {self.cli_bin_path}")
+            logger.info(f"  base_lm:  {self.cli_base_lm}")
+            logger.info(f"  acoustic: {self.cli_acoustic}")
+            logger.info("  NOTE: CLI mode does not support ASR auto-transcription; please type the transcript manually.")
+
     def get_or_load_voxcpm(self) -> voxcpm.VoxCPM:
         if self.voxcpm_model is not None:
             return self.voxcpm_model
         logger.info(f"Loading model: {self._model_id}")
         self.voxcpm_model = voxcpm.VoxCPM.from_pretrained(
             self._model_id,
+            load_denoiser=self.load_denoiser,
             optimize=self.optimize,
             device=self.device,
         )
@@ -298,6 +324,92 @@ class VoxCPMDemo:
             generate_kwargs["prompt_text"] = prompt_text_clean
         return generate_kwargs
 
+    def _generate_via_cli(
+        self,
+        final_text: str,
+        audio_path: Optional[str],
+        prompt_text_clean: Optional[str],
+        cfg_value: float,
+        timesteps: int,
+        seed: Optional[int],
+    ) -> Tuple[int, np.ndarray, Optional[int]]:
+        import subprocess
+        import tempfile
+        import soundfile as sf
+        import librosa
+
+        tmp_wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        tmp_wav.close()
+        out_wav = tmp_wav.name
+
+        # Convert reference audio to standard PCM WAV if needed (CLI only supports WAV)
+        cli_audio_path = audio_path
+        tmp_ref_wav = None
+        if audio_path:
+            try:
+                ref_data, ref_sr = librosa.load(audio_path, sr=16000, mono=True)
+                tmp_ref = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+                tmp_ref.close()
+                sf.write(tmp_ref.name, ref_data, ref_sr, subtype="PCM_16")
+                cli_audio_path = tmp_ref.name
+                tmp_ref_wav = tmp_ref.name
+                logger.info(f"[CLI] Converted reference audio to 16kHz WAV: {cli_audio_path}")
+            except Exception as e:
+                logger.warning(f"[CLI] Failed to convert reference audio: {e}, using original path")
+                cli_audio_path = audio_path
+
+        cmd = [
+            self.cli_bin_path,
+            "-t", final_text,
+            "-o", out_wav,
+            "--timesteps", str(timesteps),
+            "--cfg", str(cfg_value),
+            "--seed", str(seed if seed is not None else 42),
+        ]
+
+        if cli_audio_path and prompt_text_clean and prompt_text_clean.strip():
+            # Ultimate cloning: use prompt-wav + prompt-text + reference
+            cmd += ["--prompt-wav", cli_audio_path, "--prompt-text", prompt_text_clean, "-r", cli_audio_path]
+            logger.info(f"[CLI] Mode: ultimate cloning (prompt_text length={len(prompt_text_clean)})")
+        elif cli_audio_path:
+            # Controllable cloning: reference only
+            cmd += ["-r", cli_audio_path]
+            logger.info("[CLI] Mode: controllable cloning (reference only)")
+
+        cmd += [self.cli_base_lm, self.cli_acoustic]
+
+        logger.info(f"[CLI] Running voxcpm2-cli with timesteps={timesteps}")
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            if result.returncode != 0:
+                stderr_tail = result.stderr[-500:] if result.stderr else "(no stderr)"
+                # If ultimate cloning failed, retry with controllable cloning (reference only)
+                if "--prompt-wav" in cmd and result.returncode < 0:
+                    logger.warning(f"[CLI] Ultimate cloning crashed (code {result.returncode}), retrying with controllable cloning...")
+                    retry_cmd = [c for c in cmd if c not in ("--prompt-wav", cli_audio_path, "--prompt-text", prompt_text_clean)]
+                    # Remove the first cli_audio_path that was -r's argument, keep the second one
+                    retry_cmd = [self.cli_bin_path, "-t", final_text, "-o", out_wav,
+                                 "--timesteps", str(timesteps), "--cfg", str(cfg_value),
+                                 "--seed", str(seed if seed is not None else 42),
+                                 "-r", cli_audio_path,
+                                 self.cli_base_lm, self.cli_acoustic]
+                    result = subprocess.run(retry_cmd, capture_output=True, text=True, timeout=600)
+                    if result.returncode != 0:
+                        stderr_tail = result.stderr[-500:] if result.stderr else "(no stderr)"
+                        raise RuntimeError(f"voxcpm2-cli retry also failed (code {result.returncode}): {stderr_tail}")
+                else:
+                    raise RuntimeError(f"voxcpm2-cli exited with code {result.returncode}: {stderr_tail}")
+            wav, sr = sf.read(out_wav)
+            logger.info(f"[CLI] Generated: {len(wav)/sr:.2f}s audio, sample_rate={sr}")
+            return (sr, wav, seed)
+        finally:
+            for f in [out_wav, tmp_ref_wav]:
+                if f:
+                    try:
+                        os.unlink(f)
+                    except OSError:
+                        pass
+
     def generate_tts_audio(
         self,
         text_input: str,
@@ -310,20 +422,28 @@ class VoxCPMDemo:
         inference_timesteps: int = 10,
         seed: Optional[int] = None,
     ) -> Tuple[int, np.ndarray, Optional[int]]:
-        current_model = self.get_or_load_voxcpm()
-
         text = (text_input or "").strip()
         if len(text) == 0:
             raise ValueError("Please input text to synthesize.")
 
         control = (control_instruction or "").strip()
-        # Strip any parentheses (half-width/full-width) from control text to avoid
-        # breaking the "(control)text" prompt format expected by the model.
         control = re.sub(r"[()（）]", "", control).strip()
         final_text = f"({control}){text}" if control else text
 
         audio_path = reference_wav_path_input if reference_wav_path_input else None
         prompt_text_clean = (prompt_text or "").strip() or None
+
+        if self.backend == "cli":
+            return self._generate_via_cli(
+                final_text=final_text,
+                audio_path=audio_path,
+                prompt_text_clean=prompt_text_clean,
+                cfg_value=cfg_value_input,
+                timesteps=self.cli_timesteps,
+                seed=seed,
+            )
+
+        current_model = self.get_or_load_voxcpm()
 
         if audio_path and prompt_text_clean:
             logger.info(f"[Voice Cloning] prompt_wav + prompt_text + reference_wav")
@@ -428,6 +548,18 @@ def create_demo_interface(demo: VoxCPMDemo):
         )
 
         gr.Markdown(I18N("usage_instructions"))
+
+        if demo.backend == "cli":
+            gr.Markdown(
+                f"> **Backend: CLI (llama.cpp-omni)** — timesteps={demo.cli_timesteps} | "
+                f"Fast Metal acceleration. Note: ASR auto-transcription is unavailable; "
+                f"please type the reference audio transcript manually for ultimate cloning."
+            )
+        else:
+            gr.Markdown(
+                f"> **Backend: Python (PyTorch)** — Full features including ASR and denoiser. "
+                f"Slower on Apple Silicon (MPS uses float32)."
+            )
 
         with gr.Row():
             with gr.Column():
@@ -560,8 +692,23 @@ def run_demo(
     show_error: bool = True,
     model_id: str = "openbmb/VoxCPM2",
     device: str = "auto",
+    load_denoiser: bool = True,
+    backend: str = "python",
+    cli_bin_path: Optional[str] = None,
+    cli_base_lm: Optional[str] = None,
+    cli_acoustic: Optional[str] = None,
+    cli_timesteps: int = 7,
 ):
-    demo = VoxCPMDemo(model_id=model_id, device=device)
+    demo = VoxCPMDemo(
+        model_id=model_id,
+        device=device,
+        load_denoiser=load_denoiser,
+        backend=backend,
+        cli_bin_path=cli_bin_path,
+        cli_base_lm=cli_base_lm,
+        cli_acoustic=cli_acoustic,
+        cli_timesteps=cli_timesteps,
+    )
     interface = create_demo_interface(demo)
     interface.queue(max_size=10, default_concurrency_limit=1).launch(
         server_name=server_name,
@@ -597,10 +744,53 @@ if __name__ == "__main__":
         default="auto",
         help="Runtime device: auto, cpu, mps, cuda, or cuda:N (default: auto)",
     )
+    parser.add_argument(
+        "--no-denoiser",
+        action="store_true",
+        default=False,
+        help="Disable the denoiser (zipenhancer) to avoid remote download",
+    )
+    parser.add_argument(
+        "--backend",
+        type=str,
+        default="python",
+        choices=["python", "cli"],
+        help="Generation backend: 'python' (full features, slower on Mac) or 'cli' (llama.cpp-omni, 15-20x faster on Apple Silicon)",
+    )
+    parser.add_argument(
+        "--cli-bin",
+        type=str,
+        default=None,
+        help="Path to voxcpm2-cli binary (required for --backend cli)",
+    )
+    parser.add_argument(
+        "--cli-base-lm",
+        type=str,
+        default=None,
+        help="Path to VoxCPM2-BaseLM GGUF file (required for --backend cli)",
+    )
+    parser.add_argument(
+        "--cli-acoustic",
+        type=str,
+        default=None,
+        help="Path to VoxCPM2-Acoustic GGUF file (required for --backend cli)",
+    )
+    parser.add_argument(
+        "--cli-timesteps",
+        type=int,
+        default=7,
+        help="CFM inference timesteps for CLI backend (default: 7, lower = faster)",
+    )
     args = parser.parse_args()
     run_demo(
         model_id=args.model_id,
         server_name=args.host,
         server_port=args.port,
         device=args.device,
+        load_denoiser=not args.no_denoiser,
+        backend=args.backend,
+        cli_bin_path=args.cli_bin,
+        cli_base_lm=args.cli_base_lm,
+        cli_acoustic=args.cli_acoustic,
+        cli_timesteps=args.cli_timesteps,
     )
