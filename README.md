@@ -596,6 +596,7 @@ Full documentation: **[voxcpm.readthedocs.io](https://voxcpm.readthedocs.io/en/l
 | **[ComfyUI_RH_VoxCPM](https://github.com/HM-RunningHub/ComfyUI_RH_VoxCPM)** | Feature-complete ComfyUI workflow for VoxCPM 2 with multi-speaker generation, LoRA, and auto-ASR |
 | **[ComfyUI-VoxCPMTTS](https://github.com/1038lab/ComfyUI-VoxCPMTTS)**       | ComfyUI TTS extension                                                                            |
 | **[TTS WebUI](https://github.com/rsxdalv/tts_webui_extension.vox_cpm)**     | Browser-based TTS extension                                                                      |
+| **[Video Dubbing Translator](https://github.com/kadirb4rut/video-dubbing-translator)** | Local-first video dubbing: vocal separation → WhisperX ASR → translation → VoxCPM2 voice cloning → lip-sync |
 
 
 > See the full [Ecosystem](https://voxcpm.readthedocs.io/en/latest/) in the docs. Community projects are not officially maintained by OpenBMB. Built something cool? [Open an issue or PR](https://github.com/OpenBMB/VoxCPM/issues) to add it!

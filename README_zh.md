@@ -586,6 +586,7 @@ python lora_ft_webui.py   # 然后打开 http://localhost:7860
 | [**ComfyUI_RH_VoxCPM**](https://github.com/HM-RunningHub/ComfyUI_RH_VoxCPM) | 面向 VoxCPM 2 的功能更完整的 ComfyUI 工作流，支持多说话人、LoRA 和自动 ASR |
 | [**ComfyUI-VoxCPMTTS**](https://github.com/1038lab/ComfyUI-VoxCPMTTS) | ComfyUI TTS 扩展 |
 | [**TTS WebUI**](https://github.com/rsxdalv/tts_webui_extension.vox_cpm) | 浏览器端 TTS 扩展 |
+| [**Video Dubbing Translator**](https://github.com/kadirb4rut/video-dubbing-translator) | 本地优先的视频配音：人声分离 → WhisperX ASR → 翻译 → VoxCPM2 声音克隆 → 对口型 |
 
 > 完整生态见[文档](https://voxcpm.readthedocs.io/zh-cn/latest/)。社区项目非 OpenBMB 官方维护。做了什么有趣的东西？[提 Issue 或 PR](https://github.com/OpenBMB/VoxCPM/issues) 把它加进来！
 
