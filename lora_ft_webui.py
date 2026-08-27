@@ -22,7 +22,11 @@ default_pretrained_path = str(_v2_path if _v2_path.exists() else _v15_path)
 from voxcpm.core import VoxCPM
 from voxcpm.model.voxcpm import LoRAConfig
 import numpy as np
-from funasr import AutoModel
+
+try:
+    from funasr import AutoModel
+except ImportError:  # Optional dependency for ASR-assisted prompt transcription
+    AutoModel = None
 
 # --- Localization ---
 LANG_DICT = {
@@ -121,6 +125,10 @@ def detect_sample_rate(pretrained_path: str) -> Optional[int]:
 
 def get_or_load_asr_model():
     global asr_model
+    if AutoModel is None:
+        raise RuntimeError(
+            "funasr is not installed. Install the optional ASR dependency to enable prompt transcription."
+        )
     if asr_model is None:
         print("Loading ASR model (SenseVoiceSmall)...", file=sys.stderr)
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
