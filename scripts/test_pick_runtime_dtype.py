@@ -57,10 +57,19 @@ for dt in sorted(_VALID_DTYPE_OVERRIDES):
         print(f"[FAIL] get_dtype({dt!r}) raised: {e}")
         results.append(False)
 
-print("\n=== pick_runtime_dtype: non-mps is a no-op ===")
+print("\n=== pick_runtime_dtype: cuda keeps the checkpoint dtype ===")
 results.append(expect(pick_runtime_dtype("cuda", "bfloat16"), "bfloat16", "cuda/bf16 untouched"))
-results.append(expect(pick_runtime_dtype("cpu", "float16"), "float16", "cpu/fp16 untouched"))
 results.append(expect(pick_runtime_dtype("cuda", "float32"), "float32", "cuda/fp32 untouched"))
+
+print("\n=== pick_runtime_dtype: cpu forces fp32 (bf16 is emulated, slower) ===")
+os.environ.pop("VOXCPM_CPU_DTYPE", None)
+results.append(expect(pick_runtime_dtype("cpu", "bfloat16"), "float32", "cpu/bf16 -> fp32"))
+results.append(expect(pick_runtime_dtype("cpu", "float16"), "float32", "cpu/fp16 -> fp32"))
+results.append(expect(pick_runtime_dtype("cpu", "float32"), "float32", "cpu/fp32 stays"))
+
+os.environ["VOXCPM_CPU_DTYPE"] = "bfloat16"
+results.append(expect(pick_runtime_dtype("cpu", "bfloat16"), "bfloat16", "VOXCPM_CPU_DTYPE override honored"))
+os.environ.pop("VOXCPM_CPU_DTYPE", None)
 
 print("\n=== pick_runtime_dtype: mps forces fp32 for low-precision ===")
 os.environ.pop("VOXCPM_MPS_DTYPE", None)

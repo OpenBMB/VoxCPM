@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VoxCPM Studio — Synthèse vocale</title>
+<style>
+  :root {
+    --bg: #0b0e14;
+    --bg-soft: #121722;
+    --card: #161d2b;
+    --card-hover: #1b2436;
+    --border: #263248;
+    --text: #e6ebf4;
+    --text-dim: #8b97ac;
+    --accent: #4f8ef7;
+    --accent-soft: rgba(79, 142, 247, 0.14);
+    --accent-2: #8b5cf6;
+    --ok: #34d399;
+    --warn: #fbbf24;
+    --err: #f87171;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+    background: radial-gradient(1200px 600px at 80% -10%, rgba(139, 92, 246, 0.12), transparent),
+                radial-gradient(1000px 500px at 10% -10%, rgba(79, 142, 247, 0.12), transparent),
+                var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 2rem 1rem 4rem;
+  }
+  .container { max-width: 1080px; margin: 0 auto; }
+
+  header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.8rem; }
+  .brand h1 {
+    font-size: 1.9rem; font-weight: 800; letter-spacing: -0.02em;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .brand p { color: var(--text-dim); font-size: 0.92rem; margin-top: 0.2rem; }
+  .header-right { display: flex; align-items: center; gap: 0.8rem; }
+  .status {
+    display: inline-flex; align-items: center; gap: 0.45rem;
+    font-size: 0.82rem; color: var(--text-dim);
+    background: var(--bg-soft); border: 1px solid var(--border);
+    padding: 0.4rem 0.75rem; border-radius: 999px;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
+  .dot.ok { background: var(--ok); }
+  .dot.err { background: var(--err); }
+  .lang-toggle {
+    display: flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden;
+  }
+  .lang-toggle button {
+    background: transparent; color: var(--text-dim); border: none;
+    padding: 0.4rem 0.85rem; cursor: pointer; font-size: 0.82rem; font-weight: 600;
+  }
+  .lang-toggle button.active { background: var(--accent-soft); color: var(--accent); }
+
+  .modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.8rem; margin-bottom: 1.4rem; }
+  @media (max-width: 720px) { .modes { grid-template-columns: 1fr; } }
+  .mode-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 1rem 1.1rem; cursor: pointer; transition: all 0.18s ease; user-select: none;
+  }
+  .mode-card:hover { background: var(--card-hover); }
+  .mode-card.active { border-color: var(--accent); background: var(--accent-soft); }
+  .mode-card .mode-icon { font-size: 1.4rem; }
+  .mode-card h3 { font-size: 0.98rem; margin: 0.45rem 0 0.3rem; }
+  .mode-card p { font-size: 0.8rem; color: var(--text-dim); line-height: 1.45; }
+
+  .panel {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 1.4rem; margin-bottom: 1.2rem;
+  }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+
+  label { display: block; font-size: 0.86rem; font-weight: 600; margin-bottom: 0.4rem; }
+  label .hint { color: var(--text-dim); font-weight: 400; }
+  textarea, input[type="text"], input[type="number"] {
+    width: 100%; background: var(--bg-soft); color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px;
+    padding: 0.7rem 0.85rem; font-size: 0.92rem; font-family: inherit;
+    transition: border-color 0.15s ease; resize: vertical;
+  }
+  textarea:focus, input:focus { outline: none; border-color: var(--accent); }
+  .field { margin-bottom: 1.05rem; }
+
+  .dropzone {
+    border: 1.5px dashed var(--border); border-radius: 10px;
+    padding: 1.1rem; text-align: center; cursor: pointer;
+    color: var(--text-dim); font-size: 0.88rem; transition: all 0.15s ease;
+    background: var(--bg-soft);
+  }
+  .dropzone:hover, .dropzone.dragover { border-color: var(--accent); color: var(--accent); }
+  .dropzone.has-file { border-style: solid; border-color: var(--ok); color: var(--text); }
+  .dropzone audio { width: 100%; margin-top: 0.6rem; }
+  .clear-file {
+    background: none; border: none; color: var(--err); cursor: pointer;
+    font-size: 0.8rem; margin-top: 0.4rem; text-decoration: underline;
+  }
+
+  details.advanced { border: 1px solid var(--border); border-radius: 10px; background: var(--bg-soft); }
+  details.advanced summary {
+    cursor: pointer; padding: 0.75rem 1rem; font-size: 0.88rem; font-weight: 600;
+    color: var(--text-dim); list-style: none;
+  }
+  details.advanced summary::before { content: "⚙️ "; }
+  details.advanced .adv-body { padding: 0.4rem 1rem 1rem; display: grid; gap: 0.9rem; }
+  .slider-row { display: grid; grid-template-columns: 1fr auto; gap: 0.8rem; align-items: center; }
+  .slider-row output { font-variant-numeric: tabular-nums; font-size: 0.88rem; color: var(--accent); min-width: 2.6rem; text-align: right; }
+  input[type="range"] { width: 100%; accent-color: var(--accent); }
+  .check-row { display: flex; align-items: center; gap: 0.55rem; font-size: 0.88rem; }
+  .check-row input { accent-color: var(--accent); width: 16px; height: 16px; }
+  .check-row .sub { color: var(--text-dim); font-size: 0.78rem; }
+  .seed-row { display: grid; grid-template-columns: 1fr auto; gap: 0.8rem; align-items: center; }
+
+  .generate-btn {
+    width: 100%; padding: 0.95rem; font-size: 1.02rem; font-weight: 700;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    color: white; border: none; border-radius: 12px; cursor: pointer;
+    transition: opacity 0.15s ease, transform 0.1s ease; margin-top: 0.4rem;
+  }
+  .generate-btn:hover:not(:disabled) { opacity: 0.92; }
+  .generate-btn:active:not(:disabled) { transform: scale(0.99); }
+  .generate-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .spinner {
+    display: inline-block; width: 15px; height: 15px; vertical-align: -2px;
+    border: 2px solid rgba(255,255,255,0.35); border-top-color: white;
+    border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 0.5rem;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .result-panel audio { width: 100%; margin: 0.8rem 0; }
+  .result-meta { font-size: 0.82rem; color: var(--text-dim); display: flex; gap: 1.2rem; flex-wrap: wrap; }
+  .download-btn {
+    display: inline-block; margin-top: 0.7rem; padding: 0.5rem 1rem;
+    background: var(--bg-soft); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); text-decoration: none; font-size: 0.86rem;
+  }
+  .download-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  .alert {
+    border-radius: 10px; padding: 0.8rem 1rem; font-size: 0.88rem; margin-bottom: 1rem;
+    border: 1px solid; display: none;
+  }
+  .alert.error { display: block; background: rgba(248, 113, 113, 0.08); border-color: rgba(248, 113, 113, 0.4); color: var(--err); }
+  .alert.info  { display: block; background: var(--accent-soft); border-color: rgba(79, 142, 247, 0.4); color: var(--accent); }
+
+  .history-item {
+    display: flex; align-items: center; gap: 0.9rem;
+    padding: 0.7rem 0; border-bottom: 1px solid var(--border);
+  }
+  .history-item:last-child { border-bottom: none; }
+  .history-item .txt { flex: 1; font-size: 0.85rem; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .history-item audio { width: 240px; height: 34px; }
+  @media (max-width: 640px) { .history-item { flex-direction: column; align-items: stretch; } .history-item audio { width: 100%; } }
+  .section-title { font-size: 1.05rem; font-weight: 700; margin-bottom: 0.6rem; }
+  .empty { color: var(--text-dim); font-size: 0.86rem; }
+  footer { text-align: center; color: var(--text-dim); font-size: 0.8rem; margin-top: 2rem; }
+  footer a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <div class="brand">
+      <h1>VoxCPM Studio</h1>
+      <p data-i18n="subtitle">Synthèse vocale multilingue — création et clonage de voix</p>
+    </div>
+    <div class="header-right">
+      <span class="status"><span class="dot" id="statusDot"></span><span id="statusText">…</span></span>
+      <div class="lang-toggle">
+        <button id="btnFr" onclick="setLang('fr')">FR</button>
+        <button id="btnEn" onclick="setLang('en')">EN</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="modes" id="modes">
+    <div class="mode-card active" data-mode="design">
+      <span class="mode-icon">🎨</span>
+      <h3 data-i18n="mode_design">Création de voix</h3>
+      <p data-i18n="mode_design_desc">Créez une voix inédite à partir d'une simple description — aucun audio requis.</p>
+    </div>
+    <div class="mode-card" data-mode="clone">
+      <span class="mode-icon">🎛️</span>
+      <h3 data-i18n="mode_clone">Clonage contrôlable</h3>
+      <p data-i18n="mode_clone_desc">Clonez une voix depuis un extrait audio, avec contrôle du style et de l'émotion.</p>
+    </div>
+    <div class="mode-card" data-mode="ultimate">
+      <span class="mode-icon">🎙️</span>
+      <h3 data-i18n="mode_ultimate">Clonage ultime</h3>
+      <p data-i18n="mode_ultimate_desc">Reproduction fidèle de chaque nuance vocale via l'audio + sa transcription.</p>
+    </div>
+  </div>
+
+  <div class="alert" id="alertBox"></div>
+
+  <div class="panel">
+    <div class="grid">
+      <div>
+        <div class="field" id="fieldRef" style="display:none">
+          <label data-i18n="ref_label">🎤 Audio de référence <span class="hint" data-i18n="ref_hint">(wav/mp3/flac, 5–15 s recommandé)</span></label>
+          <div class="dropzone" id="dropRef">
+            <span id="dropRefText" data-i18n="drop_text">Cliquez ou déposez un fichier audio ici</span>
+            <input type="file" id="fileRef" accept="audio/*" hidden>
+          </div>
+        </div>
+
+        <div class="field" id="fieldPromptText" style="display:none">
+          <label data-i18n="prompt_label">📝 Transcription de l'audio de référence <span class="hint" data-i18n="prompt_hint">(texte exact prononcé dans l'extrait)</span></label>
+          <textarea id="promptText" rows="2" data-i18n-ph="prompt_ph" placeholder="Le texte exact prononcé dans l'audio de référence…"></textarea>
+          <div class="check-row" style="margin-top:0.5rem">
+            <input type="checkbox" id="maxSim" checked>
+            <label for="maxSim" style="margin:0" data-i18n="max_sim">Similarité maximale (utiliser aussi l'extrait comme référence isolée)</label>
+          </div>
+        </div>
+
+        <div class="field" id="fieldControl">
+          <label data-i18n="control_label">🎛️ Description de la voix / style <span class="hint" data-i18n="control_hint">(optionnel — français, anglais, chinois…)</span></label>
+          <textarea id="control" rows="2" data-i18n-ph="control_ph" placeholder="ex. : Voix féminine jeune, douce et chaleureuse, débit posé"></textarea>
+        </div>
+
+        <div class="field">
+          <label data-i18n="text_label">✍️ Texte à synthétiser</label>
+          <textarea id="text" rows="4" data-i18n-ph="text_ph" placeholder="Saisissez ici le texte à transformer en parole…"></textarea>
+        </div>
+
+        <details class="advanced">
+          <summary data-i18n="advanced">Réglages avancés</summary>
+          <div class="adv-body">
+            <div>
+              <label data-i18n="cfg_label">CFG — fidélité au style <span class="hint">(1.0–3.0)</span></label>
+              <div class="slider-row">
+                <input type="range" id="cfg" min="1" max="3" step="0.1" value="2.0" oninput="cfgOut.value=this.value">
+                <output id="cfgOut">2.0</output>
+              </div>
+            </div>
+            <div>
+              <label data-i18n="steps_label">Étapes de diffusion <span class="hint">(4–30)</span></label>
+              <div class="slider-row">
+                <input type="range" id="steps" min="4" max="30" step="1" value="10" oninput="stepsOut.value=this.value">
+                <output id="stepsOut">10</output>
+              </div>
+            </div>
+            <div>
+              <label for="seed" data-i18n="seed_label">Graine aléatoire (seed)</label>
+              <div class="seed-row">
+                <input type="number" id="seed" min="0" step="1" disabled>
+                <div class="check-row">
+                  <input type="checkbox" id="randomSeed" checked onchange="seed.disabled=this.checked">
+                  <label for="randomSeed" style="margin:0" data-i18n="random_seed">Aléatoire</label>
+                </div>
+              </div>
+            </div>
+            <div class="check-row">
+              <input type="checkbox" id="normalize">
+              <div>
+                <label for="normalize" style="margin:0" data-i18n="normalize_label">Normalisation du texte</label>
+                <div class="sub" data-i18n="normalize_sub">Convertit nombres, dates et abréviations en toutes lettres</div>
+              </div>
+            </div>
+            <div class="check-row" id="rowDenoise" style="display:none">
+              <input type="checkbox" id="denoise">
+              <div>
+                <label for="denoise" style="margin:0" data-i18n="denoise_label">Débruitage de la référence</label>
+                <div class="sub" data-i18n="denoise_sub">Nettoie l'audio de référence avant le clonage (ZipEnhancer)</div>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <button class="generate-btn" id="generateBtn" onclick="generate()">
+          <span data-i18n="generate">🔊 Générer la voix</span>
+        </button>
+      </div>
+
+      <div>
+        <div class="panel result-panel" style="background:var(--bg-soft)">
+          <div class="section-title" data-i18n="result_title">Résultat</div>
+          <div id="resultEmpty" class="empty" data-i18n="result_empty">L'audio généré apparaîtra ici.</div>
+          <div id="resultBox" style="display:none">
+            <audio id="resultAudio" controls></audio>
+            <div class="result-meta">
+              <span id="metaDuration"></span>
+              <span id="metaTime"></span>
+              <span id="metaSeed"></span>
+            </div>
+            <a class="download-btn" id="downloadLink" download="voxcpm_output.wav" data-i18n="download">⬇️ Télécharger le WAV</a>
+          </div>
+        </div>
+
+        <div class="panel" style="background:var(--bg-soft); margin-top:1rem">
+          <div class="section-title" data-i18n="history_title">Historique de la session</div>
+          <div id="historyList"><div class="empty" data-i18n="history_empty">Aucune génération pour l'instant.</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <span data-i18n="footer">Propulsé par</span>
+    <a href="https://github.com/OpenBMB/VoxCPM" target="_blank" rel="noopener">VoxCPM</a> ·
+    <a href="/docs" target="_blank" rel="noopener">API</a>
+  </footer>
+</div>
+
+<script>
+"use strict";
+
+/* ---------------- i18n ---------------- */
+const I18N = {
+  fr: {
+    subtitle: "Synthèse vocale multilingue — création et clonage de voix",
+    mode_design: "Création de voix",
+    mode_design_desc: "Créez une voix inédite à partir d'une simple description — aucun audio requis.",
+    mode_clone: "Clonage contrôlable",
+    mode_clone_desc: "Clonez une voix depuis un extrait audio, avec contrôle du style et de l'émotion.",
+    mode_ultimate: "Clonage ultime",
+    mode_ultimate_desc: "Reproduction fidèle de chaque nuance vocale via l'audio + sa transcription.",
+    ref_label: "🎤 Audio de référence",
+    ref_hint: "(wav/mp3/flac, 5–15 s recommandé)",
+    drop_text: "Cliquez ou déposez un fichier audio ici",
+    prompt_label: "📝 Transcription de l'audio de référence",
+    prompt_hint: "(texte exact prononcé dans l'extrait)",
+    prompt_ph: "Le texte exact prononcé dans l'audio de référence…",
+    max_sim: "Similarité maximale (utiliser aussi l'extrait comme référence isolée)",
+    control_label: "🎛️ Description de la voix / style",
+    control_hint: "(optionnel — français, anglais, chinois…)",
+    control_ph: "ex. : Voix féminine jeune, douce et chaleureuse, débit posé",
+    text_label: "✍️ Texte à synthétiser",
+    text_ph: "Saisissez ici le texte à transformer en parole…",
+    advanced: "Réglages avancés",
+    cfg_label: "CFG — fidélité au style",
+    steps_label: "Étapes de diffusion",
+    seed_label: "Graine aléatoire (seed)",
+    random_seed: "Aléatoire",
+    normalize_label: "Normalisation du texte",
+    normalize_sub: "Convertit nombres, dates et abréviations en toutes lettres",
+    denoise_label: "Débruitage de la référence",
+    denoise_sub: "Nettoie l'audio de référence avant le clonage (ZipEnhancer)",
+    generate: "🔊 Générer la voix",
+    generating: "Génération en cours…",
+    result_title: "Résultat",
+    result_empty: "L'audio généré apparaîtra ici.",
+    download: "⬇️ Télécharger le WAV",
+    history_title: "Historique de la session",
+    history_empty: "Aucune génération pour l'instant.",
+    footer: "Propulsé par",
+    status_checking: "Vérification…",
+    status_ready: "Modèle chargé",
+    status_lazy: "Serveur prêt — le modèle se chargera à la 1ʳᵉ requête (peut prendre quelques minutes)",
+    status_offline: "Serveur injoignable",
+    err_no_text: "Veuillez saisir un texte à synthétiser.",
+    err_no_ref: "Ce mode nécessite un fichier audio de référence.",
+    err_no_prompt: "Le clonage ultime nécessite la transcription de l'audio de référence.",
+    err_generation: "Échec de la génération : ",
+    info_first: "Première requête : le modèle est en cours de chargement côté serveur, cela peut prendre plusieurs minutes…",
+    duration: "Durée : ",
+    gen_time: "Généré en ",
+    seed_used: "Seed : "
+  },
+  en: {
+    subtitle: "Multilingual speech synthesis — voice design & cloning",
+    mode_design: "Voice Design",
+    mode_design_desc: "Create a brand-new voice from a plain description — no audio needed.",
+    mode_clone: "Controllable Cloning",
+    mode_clone_desc: "Clone a voice from an audio clip, with style and emotion control.",
+    mode_ultimate: "Ultimate Cloning",
+    mode_ultimate_desc: "Faithfully reproduce every vocal nuance via audio + its transcript.",
+    ref_label: "🎤 Reference audio",
+    ref_hint: "(wav/mp3/flac, 5–15 s recommended)",
+    drop_text: "Click or drop an audio file here",
+    prompt_label: "📝 Transcript of the reference audio",
+    prompt_hint: "(exact text spoken in the clip)",
+    prompt_ph: "The exact text spoken in the reference audio…",
+    max_sim: "Maximum similarity (also use the clip as isolated reference)",
+    control_label: "🎛️ Voice / style description",
+    control_hint: "(optional — French, English, Chinese…)",
+    control_ph: "e.g. Young female voice, warm and gentle, calm pace",
+    text_label: "✍️ Text to synthesize",
+    text_ph: "Type here the text to turn into speech…",
+    advanced: "Advanced settings",
+    cfg_label: "CFG — style adherence",
+    steps_label: "Diffusion steps",
+    seed_label: "Random seed",
+    random_seed: "Random",
+    normalize_label: "Text normalization",
+    normalize_sub: "Spells out numbers, dates and abbreviations",
+    denoise_label: "Reference denoising",
+    denoise_sub: "Cleans the reference audio before cloning (ZipEnhancer)",
+    generate: "🔊 Generate speech",
+    generating: "Generating…",
+    result_title: "Result",
+    result_empty: "Generated audio will appear here.",
+    download: "⬇️ Download WAV",
+    history_title: "Session history",
+    history_empty: "No generation yet.",
+    footer: "Powered by",
+    status_checking: "Checking…",
+    status_ready: "Model loaded",
+    status_lazy: "Server ready — model loads on 1st request (may take a few minutes)",
+    status_offline: "Server unreachable",
+    err_no_text: "Please enter some text to synthesize.",
+    err_no_ref: "This mode requires a reference audio file.",
+    err_no_prompt: "Ultimate cloning requires the transcript of the reference audio.",
+    err_generation: "Generation failed: ",
+    info_first: "First request: the model is loading server-side, this may take several minutes…",
+    duration: "Duration: ",
+    gen_time: "Generated in ",
+    seed_used: "Seed: "
+  }
+};
+
+let lang = (navigator.language || "en").toLowerCase().startsWith("fr") ? "fr" : "en";
+function t(key) { return (I18N[lang] && I18N[lang][key]) || I18N.en[key] || key; }
+
+function applyLang() {
+  document.documentElement.lang = lang;
+  document.querySelectorAll("[data-i18n]").forEach(el => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll("[data-i18n-ph]").forEach(el => { el.placeholder = t(el.dataset.i18nPh); });
+  document.getElementById("btnFr").classList.toggle("active", lang === "fr");
+  document.getElementById("btnEn").classList.toggle("active", lang === "en");
+  refreshStatusText();
+}
+function setLang(l) { lang = l; localStorage.setItem("voxcpm_lang", l); applyLang(); }
+if (localStorage.getItem("voxcpm_lang")) lang = localStorage.getItem("voxcpm_lang");
+
+/* ---------------- Mode switching ---------------- */
+let mode = "design";
+document.querySelectorAll(".mode-card").forEach(card => {
+  card.addEventListener("click", () => {
+    document.querySelectorAll(".mode-card").forEach(c => c.classList.remove("active"));
+    card.classList.add("active");
+    mode = card.dataset.mode;
+    updateFields();
+  });
+});
+
+function updateFields() {
+  const needsAudio = mode === "clone" || mode === "ultimate";
+  document.getElementById("fieldRef").style.display = needsAudio ? "" : "none";
+  document.getElementById("fieldPromptText").style.display = mode === "ultimate" ? "" : "none";
+  document.getElementById("fieldControl").style.display = mode === "ultimate" ? "none" : "";
+  document.getElementById("rowDenoise").style.display = needsAudio ? "" : "none";
+}
+
+/* ---------------- File upload ---------------- */
+const dropRef = document.getElementById("dropRef");
+const fileRef = document.getElementById("fileRef");
+let refFile = null;
+
+dropRef.addEventListener("click", () => fileRef.click());
+fileRef.addEventListener("change", () => { if (fileRef.files[0]) setRefFile(fileRef.files[0]); });
+["dragover", "dragenter"].forEach(ev => dropRef.addEventListener(ev, e => { e.preventDefault(); dropRef.classList.add("dragover"); }));
+["dragleave", "drop"].forEach(ev => dropRef.addEventListener(ev, e => { e.preventDefault(); dropRef.classList.remove("dragover"); }));
+dropRef.addEventListener("drop", e => { if (e.dataTransfer.files[0]) setRefFile(e.dataTransfer.files[0]); });
+
+function setRefFile(file) {
+  refFile = file;
+  dropRef.classList.add("has-file");
+  dropRef.innerHTML = "";
+  const name = document.createElement("div");
+  name.textContent = "🎵 " + file.name;
+  const player = document.createElement("audio");
+  player.controls = true;
+  player.src = URL.createObjectURL(file);
+  const clear = document.createElement("button");
+  clear.className = "clear-file";
+  clear.textContent = "✕ " + (lang === "fr" ? "Retirer" : "Remove");
+  clear.addEventListener("click", e => { e.stopPropagation(); clearRefFile(); });
+  dropRef.append(name, player, clear);
+}
+function clearRefFile() {
+  refFile = null;
+  fileRef.value = "";
+  dropRef.classList.remove("has-file");
+  dropRef.innerHTML = "";
+  const span = document.createElement("span");
+  span.id = "dropRefText";
+  span.dataset.i18n = "drop_text";
+  span.textContent = t("drop_text");
+  dropRef.appendChild(span);
+}
+
+/* ---------------- Health check ---------------- */
+let serverState = "checking";
+async function checkHealth() {
+  try {
+    const res = await fetch("/api/health");
+    const data = await res.json();
+    serverState = data.model_loaded ? "ready" : "lazy";
+  } catch { serverState = "offline"; }
+  refreshStatusText();
+}
+function refreshStatusText() {
+  const dot = document.getElementById("statusDot");
+  const txt = document.getElementById("statusText");
+  dot.className = "dot";
+  if (serverState === "ready") { dot.classList.add("ok"); txt.textContent = t("status_ready"); }
+  else if (serverState === "lazy") { txt.textContent = t("status_lazy"); }
+  else if (serverState === "offline") { dot.classList.add("err"); txt.textContent = t("status_offline"); }
+  else { txt.textContent = t("status_checking"); }
+}
+checkHealth();
+setInterval(checkHealth, 15000);
+
+/* ---------------- Alerts ---------------- */
+function showAlert(kind, message) {
+  const box = document.getElementById("alertBox");
+  box.className = "alert " + kind;
+  box.textContent = message;
+}
+function hideAlert() { document.getElementById("alertBox").className = "alert"; }
+
+/* ---------------- Generation ---------------- */
+let generating = false;
+
+async function generate() {
+  if (generating) return;
+  hideAlert();
+
+  const text = document.getElementById("text").value.trim();
+  if (!text) { showAlert("error", t("err_no_text")); return; }
+
+  const promptText = document.getElementById("promptText").value.trim();
+  if ((mode === "clone" || mode === "ultimate") && !refFile) { showAlert("error", t("err_no_ref")); return; }
+  if (mode === "ultimate" && !promptText) { showAlert("error", t("err_no_prompt")); return; }
+
+  const form = new FormData();
+  form.append("text", text);
+  form.append("cfg_value", document.getElementById("cfg").value);
+  form.append("inference_timesteps", document.getElementById("steps").value);
+  form.append("normalize", document.getElementById("normalize").checked);
+  form.append("response_format", "wav");
+
+  let seed = null;
+  if (!document.getElementById("randomSeed").checked) {
+    const v = document.getElementById("seed").value;
+    if (v !== "") { seed = parseInt(v, 10); form.append("seed", seed); }
+  } else {
+    seed = Math.floor(Math.random() * 4294967295);
+    form.append("seed", seed);
+    document.getElementById("seed").value = seed;
+  }
+
+  if (mode !== "ultimate") {
+    const control = document.getElementById("control").value.trim();
+    if (control) form.append("control", control);
+  }
+  if (mode === "clone" && refFile) {
+    form.append("reference_audio", refFile);
+    form.append("denoise", document.getElementById("denoise").checked);
+  }
+  if (mode === "ultimate" && refFile) {
+    form.append("prompt_audio", refFile);
+    form.append("prompt_text", promptText);
+    if (document.getElementById("maxSim").checked) form.append("reference_audio", refFile);
+    form.append("denoise", document.getElementById("denoise").checked);
+  }
+
+  const btn = document.getElementById("generateBtn");
+  generating = true;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>' + t("generating");
+  if (serverState !== "ready") showAlert("info", t("info_first"));
+  const startTime = performance.now();
+
+  try {
+    const res = await fetch("/api/tts", { method: "POST", body: form });
+    if (!res.ok) {
+      let detail = res.statusText;
+      try { detail = (await res.json()).detail || detail; } catch {}
+      throw new Error(detail);
+    }
+    const blob = await res.blob();
+    const elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
+    const duration = res.headers.get("X-Duration-Seconds");
+    showResult(blob, { text, elapsed, duration, seed });
+    hideAlert();
+    serverState = "ready";
+    refreshStatusText();
+  } catch (err) {
+    showAlert("error", t("err_generation") + err.message);
+  } finally {
+    generating = false;
+    btn.disabled = false;
+    btn.innerHTML = "<span>" + t("generate") + "</span>";
+  }
+}
+
+/* ---------------- Result & history ---------------- */
+const history = [];
+
+function showResult(blob, meta) {
+  const url = URL.createObjectURL(blob);
+  document.getElementById("resultEmpty").style.display = "none";
+  document.getElementById("resultBox").style.display = "";
+  const audio = document.getElementById("resultAudio");
+  audio.src = url;
+  audio.play().catch(() => {});
+  document.getElementById("downloadLink").href = url;
+  document.getElementById("metaDuration").textContent = meta.duration ? t("duration") + meta.duration + " s" : "";
+  document.getElementById("metaTime").textContent = t("gen_time") + meta.elapsed + " s";
+  document.getElementById("metaSeed").textContent = meta.seed != null ? t("seed_used") + meta.seed : "";
+  addHistory(url, meta.text);
+}
+
+function addHistory(url, text) {
+  history.unshift({ url, text });
+  if (history.length > 8) { URL.revokeObjectURL(history.pop().url); }
+  const list = document.getElementById("historyList");
+  list.innerHTML = "";
+  history.forEach(item => {
+    const row = document.createElement("div");
+    row.className = "history-item";
+    const txt = document.createElement("div");
+    txt.className = "txt";
+    txt.textContent = item.text;
+    txt.title = item.text;
+    const player = document.createElement("audio");
+    player.controls = true;
+    player.src = item.url;
+    row.append(txt, player);
+    list.appendChild(row);
+  });
+}
+
+/* ---------------- Init ---------------- */
+applyLang();
+updateFields();
+</script>
+</body>
+</html>

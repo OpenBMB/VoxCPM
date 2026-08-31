@@ -1,0 +1,10 @@
+# cloud_setup.sh est récupéré par `curl | bash` sur une machine Linux. En CRLF,
+# le shebang emporte un \r et la machine louée répond « bad interpreter » — sur
+# un poste Windows, où core.autocrlf convertit à la volée, l'erreur ne se voit
+# jamais avant d'avoir payé l'instance.
+*.sh text eol=lf
+
+# Symétriquement, Windows PowerShell 5.1 lit un .ps1 sans BOM en CP1252 : les
+# accents se cassent et un tiret cadratin devient un guillemet fermant, donc un
+# délimiteur de chaîne. Git ne doit pas toucher à ces fichiers.
+*.ps1 -text

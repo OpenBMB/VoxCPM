@@ -262,6 +262,30 @@ voxcpm --help
 
 ### Web Demo
 
+Two web interfaces are available:
+
+**VoxCPM Studio — lightweight web UI + REST API** (no funasr required):
+
+```bash
+pip install -e ".[server]"
+python server.py --port 8000  # then open in browser: http://localhost:8000
+```
+
+A modern standalone interface (English/French) covering all three generation modes,
+backed by a REST API with an **OpenAI-compatible** `/v1/audio/speech` endpoint
+(interactive docs at `http://localhost:8000/docs`). See the
+[Guide en français](docs/GUIDE_FR.md) for a full walkthrough.
+
+```bash
+# REST API example
+curl -X POST http://localhost:8000/api/tts \
+  -F "text=Hello from the VoxCPM API!" \
+  -F "control=warm female voice" \
+  -o out.wav
+```
+
+**Gradio demo** (with automatic reference-audio transcription via funasr):
+
 ```bash
 python app.py --port 8808  # then open in browser: http://localhost:8808
 ```

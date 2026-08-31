@@ -1,0 +1,63 @@
+{
+  "_comment": "Lexique de prononciation. Clé = ce qui est écrit dans le texte, valeur = ce qui doit être prononcé. Le remplacement est insensible à la casse et ne s'applique qu'à des mots entiers. Les clés commençant par _ sont ignorées (commentaires). Utile surtout pour les noms propres, les sigles et les mots étrangers d'un livre donné.",
+  "_exemple_sigles": "--- sigles lus lettre par lettre ---",
+  "SNCF": "S N C F",
+  "RATP": "R A T P",
+  "ONU": "O N U",
+  "URSS": "U R S S",
+  "_comment_ACE": "Validé à l'oreille par Edwin le 2026-08-12, parmi « A C E », « A. C. E. », « a-cé-eu » et « acé ». Le moteur avale le E final : la relecture ASR entend « AC », et « un score S élevé », dans les DEUX voix. C'est le seul sigle du corpus qui soit mal dit — 37 ont été mis à l'épreuve (IA, PIB, TSPT, TCC, EMDR, DSM, CIM, SAMU, OMS, RGPD, INSEE, OCDE, FMI, MIT, CRISPR, ENIAC, ADN, CO2…) et 36 se prononcent juste sans aucune aide. N'ajoutez donc pas un sigle par précaution : mesurez-le d'abord.",
+  "ACE": "A C E",
+  "_exemple_etrangers": "--- mots étrangers ---",
+  "Wi-Fi": "wifi",
+  "email": "i-mail",
+  "_exemple_noms": "--- noms propres à adapter à votre livre ---",
+  "Nietzsche": "Nitche",
+  "_comment_contexte": "Une valeur peut aussi être un objet, pour ne remplacer QUE dans un contexte donné : {\"prononcer\": \"...\", \"après\": \"regex\", \"avant\": \"regex\"}. C'est le seul moyen de traiter un homographe : « il est » et « à l'est » s'écrivent pareil et ne se disent pas pareil, donc une règle qui vise le mot seul casse forcément l'un des deux.",
+  "_comment_homographes": "Les entrées ci-dessous sont des MODÈLES, volontairement désactivées (préfixe _ = ignoré). Écoutez d'abord : si la voix lit déjà correctement « l'est » ou « le couvent », n'y touchez pas — une correction inutile ne peut que dégrader. Quand vous en repérez une fausse, recopiez la ligne sans le préfixe et ajustez l'orthographe phonétique à l'oreille.",
+  "_est": {
+    "prononcer": "èsste",
+    "après": "à l'|dans l'|vers l'|de l'|l'",
+    "_pourquoi": "le point cardinal, contre le verbe être"
+  },
+  "_fils": {
+    "prononcer": "fisse",
+    "après": "mon|son|ton|le|un|leur",
+    "_pourquoi": "l'enfant, contre les fils électriques"
+  },
+  "_couvent": {
+    "prononcer": "couvan",
+    "après": "le|du|au|ce|un",
+    "_pourquoi": "le monastère, contre le verbe couver (ils couvent)"
+  },
+  "_portions": {
+    "prononcer": "porcions",
+    "après": "les|des|deux|trois|quelques",
+    "_pourquoi": "les parts, contre le verbe porter (nous portions)"
+  },
+  "_violent": {
+    "prononcer": "violan",
+    "après": "un|le|ce|très|si|plus",
+    "_pourquoi": "l'adjectif, contre le verbe violer (ils violent)"
+  },
+  "_content": {
+    "prononcer": "contan",
+    "après": "je suis|il est|elle est|très|si|pas",
+    "_pourquoi": "l'adjectif, contre le verbe conter (ils content)"
+  },
+  "_négligent": {
+    "prononcer": "négligean",
+    "après": "un|le|ce|très|si",
+    "_pourquoi": "l'adjectif, contre le verbe négliger (ils négligent)"
+  },
+  "_plus": {
+    "prononcer": "pluss",
+    "avant": "de|que|d'",
+    "_pourquoi": "le s se prononce dans « plus de dix », pas dans « plus tard »"
+  },
+  "_comment_ces": "Validé à l'oreille par Edwin le 2026-08-09 : le moteur avale le s final de « ces » et le dit « ce ». « cés » rétablit le son /se/. Ce n'est pas un homographe — « ces » se dit toujours /se/ — donc aucune règle de contexte n'est nécessaire ici, contrairement à « plus » ou « fils ».",
+  "ces": "cés",
+  "_comment_ses": "Même défaut que « ces », même correction par analogie : l'accent rétablit le /e/ final. Appliqué sans validation directe à l'oreille — le parallèle est exact, mais si « sés » sonne faux, retirez cette ligne.",
+  "ses": "sés",
+  "_comment_ce": "Validé à l'oreille par Edwin le 2026-08-12, sur la phrase « Comment écouter ce livre audio », voix Alex Somerset, parmi « çe », « sé », « se » et « seu ». Le moteur durcissait le c ; la cédille impose le /s/. C'EST L'ENTRÉE LA PLUS LOURDE DU LEXIQUE : 12 498 occurrences dans les quarante-six livres, deux fois et demie « ces ». Toute modification ici s'entend toutes les quinze secondes pendant cinq heures, dans chaque livre — ne la changez pas sans réécouter. Corollaire à connaître : changer cette ligne invalide le cache de segments de TOUS les livres, puisque presque chaque segment contient un « ce ».",
+  "ce": "çe"
+}

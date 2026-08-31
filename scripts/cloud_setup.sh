@@ -1,0 +1,192 @@
+#!/usr/bin/env bash
+# Provision any Ubuntu machine to narrate — a VPS, a rented GPU box, anything.
+#
+# The same script serves both because the only thing that differs between them
+# is which PyTorch wheel to fetch, and that is decided here by looking for a
+# GPU rather than by asking. Run it twice and it changes nothing the second
+# time: every step checks before it acts.
+#
+#   curl -fsSL https://raw.githubusercontent.com/Eddyosas008/VoxCPM/claude/repo-analysis-improvement-dg0ies/scripts/cloud_setup.sh | bash
+#
+# or, once the repository is already there:
+#
+#   bash scripts/cloud_setup.sh
+#
+# Environment:
+#   VOXCPM_DIR     where to install            (default: ~/voxcpm, or /workspace/voxcpm)
+#   VOXCPM_BRANCH  branch to check out         (default: claude/repo-analysis-improvement-dg0ies)
+#   VOXCPM_REPO    repository to clone         (default: this fork)
+#   HF_HOME        where the model is cached   (default: beside the install)
+#   SKIP_MODEL=1   do not pre-download the model
+set -euo pipefail
+
+# A rented GPU is destroyed after every book, so the install goes on the
+# persistent volume when there is one: /workspace survives the pod on RunPod
+# and on most of its competitors. Nothing here is RunPod-specific beyond that
+# path, and an explicit VOXCPM_DIR always wins.
+if [ -n "${VOXCPM_DIR:-}" ]; then
+    DIR="$VOXCPM_DIR"
+elif [ -d /workspace ] && [ -w /workspace ]; then
+    DIR=/workspace/voxcpm
+else
+    DIR="$HOME/voxcpm"
+fi
+BRANCH="${VOXCPM_BRANCH:-claude/repo-analysis-improvement-dg0ies}"
+REPO="${VOXCPM_REPO:-https://github.com/Eddyosas008/VoxCPM.git}"
+
+# The model is 4,6 GB. Cached next to the install, it is downloaded once for
+# all the pods that will ever mount this volume rather than once per book.
+CACHE="${HF_HOME:-$(dirname "$DIR")/hf-cache}"
+
+say() { printf '\n\033[1;35m==> %s\033[0m\n' "$*"; }
+
+# --- What are we on? -------------------------------------------------------
+CORES="$(nproc)"
+RAM_MB="$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)"
+if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
+    GPU="$(nvidia-smi --query-gpu=name --format=csv,noheader | head -1)"
+    DEVICE="cuda"
+    # Blackwell (compute capability 10.x and 12.x — RTX 5090, B200) has no
+    # kernels in the cu124 wheels: torch imports, sees the card, and fails at
+    # the first matmul with "no kernel image is available". Ask the driver
+    # rather than maintaining a list of card names.
+    CAP="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 | tr -d ' ')"
+    if [ "${CAP%%.*}" -ge 10 ] 2>/dev/null; then
+        TORCH_INDEX="https://download.pytorch.org/whl/cu128"
+    else
+        TORCH_INDEX="https://download.pytorch.org/whl/cu124"
+    fi
+else
+    GPU=""
+    CAP=""
+    # The CPU wheels are a fraction of the size of the CUDA ones, and on a box
+    # without a GPU the CUDA extras are several gigabytes of dead weight.
+    TORCH_INDEX="https://download.pytorch.org/whl/cpu"
+    DEVICE="cpu"
+fi
+
+say "Machine : ${CORES} cœur(s), ${RAM_MB} Mo de RAM, ${GPU:-pas de GPU}${CAP:+ (cc ${CAP})} → device=${DEVICE}"
+echo "    installation : $DIR"
+echo "    cache modèle : $CACHE"
+
+if [ "$DEVICE" = "cpu" ] && [ "$RAM_MB" -lt 12000 ]; then
+    # float32 weights need about 8.7 GB resident, and the load is where it dies.
+    echo "    RAM limitée : lancez la narration avec VOXCPM_CPU_DTYPE=bfloat16"
+    echo "    (empreinte divisée par deux, un peu plus lent — mais il faut que ça tienne)"
+fi
+
+# --- System packages -------------------------------------------------------
+say "Paquets système"
+SUDO=""
+[ "$(id -u)" -ne 0 ] && SUDO="sudo"
+export DEBIAN_FRONTEND=noninteractive
+$SUDO apt-get update -qq
+$SUDO apt-get install -y -qq git curl python3 python3-venv python3-pip ffmpeg libsndfile1
+
+# --- The repository --------------------------------------------------------
+if [ -d "$DIR/.git" ]; then
+    say "Mise à jour de $DIR"
+    git -C "$DIR" fetch --quiet origin "$BRANCH"
+    git -C "$DIR" checkout --quiet "$BRANCH"
+    git -C "$DIR" pull --quiet --ff-only origin "$BRANCH"
+else
+    say "Clonage dans $DIR"
+    git clone --quiet --branch "$BRANCH" "$REPO" "$DIR"
+fi
+cd "$DIR"
+
+# --- Python ----------------------------------------------------------------
+say "Environnement Python"
+[ -d .venv ] || python3 -m venv .venv
+# shellcheck disable=SC1091
+source .venv/bin/activate
+pip install --quiet --upgrade pip wheel
+
+say "PyTorch (${DEVICE})"
+python - <<'PY' || pip install --quiet torch torchaudio --index-url "$TORCH_INDEX"
+import sys
+try:
+    import torch  # noqa: F401
+except ImportError:
+    sys.exit(1)
+PY
+
+say "Dépendances du projet"
+pip install --quiet -e .
+
+# --- The model ------------------------------------------------------------
+# Written down rather than merely exported, because the narration command runs
+# in a later shell — often days later, on a pod that did not run this script.
+mkdir -p "$CACHE"
+cat > "$DIR/env.sh" <<EOF
+# Sourced before narrating. Generated by scripts/cloud_setup.sh.
+export HF_HOME="$CACHE"
+cd "$DIR" && source .venv/bin/activate
+EOF
+
+export HF_HOME="$CACHE"
+
+if [ "${SKIP_MODEL:-0}" != "1" ]; then
+    say "Modèle (≈4,6 Go — téléchargé une seule fois par volume)"
+    python - <<'PY'
+from huggingface_hub import snapshot_download
+
+path = snapshot_download("openbmb/VoxCPM2")
+print(f"    modèle dans {path}")
+PY
+fi
+
+# --- The cloned voices -----------------------------------------------------
+# assets/voices/ is gitignored on purpose: those are recordings of real people
+# and the repository is public. So a fresh clone has the fourteen synthetic
+# voices and none of the cloned ones, and the failure would only surface at
+# generation time, on a paid GPU. Say it now instead.
+MISSING="$(python - <<'PY'
+import json
+import pathlib
+
+try:
+    voices = json.loads(pathlib.Path("conf/preset_voices.json").read_text(encoding="utf-8"))
+except (OSError, ValueError):
+    raise SystemExit(0)
+absent = sorted(
+    {v["reference"] for v in voices if v.get("reference") and not pathlib.Path(v["reference"]).exists()}
+)
+print("\n".join(absent))
+PY
+)"
+if [ -n "$MISSING" ]; then
+    say "Voix clonées : références absentes"
+    echo "$MISSING" | sed 's/^/    /'
+    echo
+    echo "    Ces voix échoueraient à la génération. Depuis votre poste :"
+    echo "        pwsh scripts/gpu_session.ps1 push -RemoteHost <ip> -Port <port>"
+fi
+
+# --- Ready ----------------------------------------------------------------
+say "Prêt"
+cat <<EOF
+
+  source $DIR/env.sh
+
+  # Narrer un livre, sans surveillance (survit à la déconnexion) :
+  nohup python scripts/narrate_book.py livre.epub \\
+      --voice "Narrateur profond & calme" --device $DEVICE \\
+      --assemble m4b --export-acx > narration.log 2>&1 &
+
+  # Suivre :
+  tail -f narration.log
+
+  # L'interface, accessible uniquement par tunnel SSH (recommandé) :
+  python app.py --host 127.0.0.1 --port 8808 --device $DEVICE --no-denoiser
+  #   puis depuis votre poste :  ssh -N -L 8808:127.0.0.1:8808 root@<ip>
+  #   et ouvrez http://127.0.0.1:8808
+
+  # Ou exposée, avec mot de passe obligatoire :
+  VOXCPM_AUTH='edwin:motdepasse' python app.py \\
+      --host 0.0.0.0 --port 8808 --device $DEVICE --no-denoiser
+
+  # Rapatrier les chapitres finis, depuis votre poste (Windows) :
+  pwsh scripts/gpu_session.ps1 pull -RemoteHost <ip> -Port <port> -Book <nom>
+
+EOF

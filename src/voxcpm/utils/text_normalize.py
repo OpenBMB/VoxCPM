@@ -160,6 +160,27 @@ def clean_text(text):
     return text
 
 
+def _safely(normalise, text):
+    """Run a third-party normaliser, or hand the text back untouched.
+
+    wetext asserts on its own intermediate result — `assert len(input) > 0`
+    fires when its tagger reduces a non-empty input to nothing — and the
+    assertion unwinds the entire render. Three books died that way, at 41, 69
+    and 98 minutes, each after all the expensive work had already succeeded.
+
+    Normalisation is a nicety: it turns "5" into "five" and tidies spacing. The
+    raw text is a perfectly serviceable fallback, and a chapter narrated with
+    one un-normalised sentence beats a book that does not exist. Catching
+    broadly is the point — the failure mode to guard against is *any* failure,
+    not one known exception.
+    """
+    try:
+        result = normalise(text)
+    except Exception:
+        return text
+    return result if result and result.strip() else text
+
+
 class TextNormalizer:
     def __init__(self, tokenizer=None):
         self.tokenizer = tokenizer
@@ -171,18 +192,31 @@ class TextNormalizer:
         # 去除 Markdown 语法，去除表情符号，去除换行符
         lang = "zh" if contains_chinese(text) else "en"
         text = clean_text(text)
+
+        # clean_text can empty the string outright — a fragment of markup, a
+        # stray symbol, a line that was only punctuation. wetext then refuses
+        # it with `assert len(input) > 0`, and the assertion kills the whole
+        # run: three books died this way, at 41, 69 and 98 minutes in, each
+        # after everything expensive had already succeeded.
+        #
+        # Chasing the characters that trigger it one by one was losing race:
+        # the superscript "5ᵉ" was only the first. Nothing downstream needs
+        # this call to have happened, and the empty segment is caught by the
+        # quality pass, so hand the empty string back instead of raising.
+        if not text.strip():
+            return text
         if lang == "zh":
             text = text.replace(
                 "=", "等于"
             )  # 修复 ”550 + 320 等于 870 千卡。“ 被错误正则为 ”五百五十加三百二十等于八七十千卡.“
             if re.search(r"([\d$%^*_+≥≤≠×÷?=])", text):  # 避免 英文连字符被错误正则为减
                 text = re.sub(r"(?<=[a-zA-Z0-9])-(?=\d)", " - ", text)  # 修复 x-2 被正则为 x负2
-            text = self.zh_tn_model.normalize(text)
+            text = _safely(self.zh_tn_model.normalize, text)
             text = replace_blank(text)
             text = replace_corner_mark(text)
             text = remove_bracket(text)
         else:
-            text = self.en_tn_model.normalize(text)
+            text = _safely(self.en_tn_model.normalize, text)
             text = spell_out_number(text, self.inflect_parser)
         if split is False:
             return text

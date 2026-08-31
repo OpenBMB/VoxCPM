@@ -1,0 +1,5 @@
+VoxCPM is a tokenizer-free text-to-speech system that generates highly natural speech.
+Welcome to the VoxCPM batch processing demo. Each line of this file becomes one audio file.
+The quick brown fox jumps over the lazy dog.
+Bonjour et bienvenue ! Ceci est une démonstration de synthèse vocale en français.
+今天天气真不错，我们一起去公园散步吧。

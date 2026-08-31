@@ -669,8 +669,19 @@ class VoxCPM2Model(nn.Module):
                 latent_pred, pred_audio_feat, context_len = next_and_close(inference_result)
                 if retry_badcase:
                     if pred_audio_feat.shape[0] >= target_text_length * retry_badcase_ratio_threshold:
+                        # A text the tokenizer reduces to nothing makes the
+                        # threshold zero, so this branch is always taken — and
+                        # the ratio in the message below then divides by zero.
+                        # A diagnostic must never be what destroys the run: a
+                        # book had already narrated three chapters when this
+                        # line ended it.
+                        ratio = (
+                            pred_audio_feat.shape[0] / target_text_length
+                            if target_text_length
+                            else float("inf")
+                        )
                         print(
-                            f"  Badcase detected, audio_text_ratio={pred_audio_feat.shape[0] / target_text_length}, retrying...",
+                            f"  Badcase detected, audio_text_ratio={ratio}, retrying...",
                             file=sys.stderr,
                         )
                         retry_badcase_times += 1
@@ -965,8 +976,19 @@ class VoxCPM2Model(nn.Module):
                 latent_pred, pred_audio_feat, context_len = next_and_close(inference_result)
                 if retry_badcase:
                     if pred_audio_feat.shape[0] >= target_text_length * retry_badcase_ratio_threshold:
+                        # A text the tokenizer reduces to nothing makes the
+                        # threshold zero, so this branch is always taken — and
+                        # the ratio in the message below then divides by zero.
+                        # A diagnostic must never be what destroys the run: a
+                        # book had already narrated three chapters when this
+                        # line ended it.
+                        ratio = (
+                            pred_audio_feat.shape[0] / target_text_length
+                            if target_text_length
+                            else float("inf")
+                        )
                         print(
-                            f"  Badcase detected, audio_text_ratio={pred_audio_feat.shape[0] / target_text_length}, retrying...",
+                            f"  Badcase detected, audio_text_ratio={ratio}, retrying...",
                             file=sys.stderr,
                         )
                         retry_badcase_times += 1

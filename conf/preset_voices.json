@@ -1,0 +1,172 @@
+[
+  {
+    "name": "Narrateur profond & calme",
+    "description": "Voix masculine française de narrateur pour livre audio, profonde, calme et posée, timbre chaleureux et rassurant, débit lent et immersif, diction claire et articulée",
+    "seed": 4110390676,
+    "cfg": 2.0,
+    "diffusion_steps": 10,
+    "normalize": true,
+    "lang": "fr"
+  },
+  {
+    "name": "Narratrice douce & naturelle",
+    "description": "Voix féminine française de narratrice pour livre audio, douce et naturelle, timbre chaleureux et authentique, débit fluide et posé, diction claire, ton captivant et apaisant",
+    "seed": 3227543575,
+    "cfg": 2.0,
+    "diffusion_steps": 10,
+    "normalize": true,
+    "lang": "fr"
+  },
+  {
+    "name": "Conteur jeune & dynamique",
+    "description": "Voix masculine française de jeune conteur d'environ vingt-cinq ans pour livre audio, dynamique et expressive, ton vivant et engageant, débit naturel, idéale pour la narration d'histoires",
+    "seed": 2151638728,
+    "cfg": 2.0,
+    "diffusion_steps": 10,
+    "normalize": true,
+    "lang": "fr"
+  },
+  {
+    "name": "Narratrice chaleureuse & conversationnelle",
+    "description": "Voix féminine française d'âge mûr pour livre audio, chaleureuse et engageante, style conversationnel et charmant, ton bienveillant et proche de l'auditeur, diction naturelle",
+    "seed": 3023399458,
+    "cfg": 2.0,
+    "diffusion_steps": 10,
+    "normalize": true,
+    "lang": "fr"
+  },
+  {
+    "name": "Narrateur documentaire velouté",
+    "description": "Voix masculine française de narrateur de documentaire, veloutée et posée, ton professionnel empreint de mystère et d'émerveillement, diction soignée, idéale pour nature, science et histoire",
+    "seed": 1468538221,
+    "cfg": 2.0,
+    "diffusion_steps": 10,
+    "normalize": true,
+    "lang": "fr"
+  },
+  {
+    "name": "Narrateur moderne & professionnel",
+    "description": "Voix masculine française moderne, claire et profonde, ton assuré et régulier, débit confiant et professionnel, idéale pour la narration, les podcasts et les livres audio contemporains",
+    "seed": 3515672692,
+    "cfg": 2.0,
+    "diffusion_steps": 10,
+    "normalize": true,
+    "lang": "fr"
+  },
+  {
+    "name": "Méditation guidée (grave & lente)",
+    "description": "Voix masculine française très grave et profonde pour méditation guidée, extrêmement lente et douce, ton chaud, apaisant et enveloppant, chuchoté et relaxant, longues pauses, respiration calme, idéale pour la détente et la relaxation",
+    "seed": 560505514,
+    "cfg": 2.0,
+    "diffusion_steps": 10,
+    "normalize": true,
+    "lang": "fr"
+  },
+  {
+    "name": "Conteuse jeune & pétillante",
+    "description": "Voix féminine française de jeune conteuse d'environ vingt-cinq ans pour livre audio, pétillante et expressive, ton vivant et complice, débit naturel et enjoué, idéale pour la jeunesse et le roman contemporain",
+    "seed": 1794602311,
+    "cfg": 2.0,
+    "diffusion_steps": 10,
+    "normalize": true,
+    "lang": "fr"
+  },
+  {
+    "name": "Narratrice grave & intense",
+    "description": "Voix féminine française grave et posée, timbre sombre et affirmé, ton tendu et maîtrisé, débit lent et pesant, diction précise, idéale pour le thriller, le polar et le récit sombre",
+    "seed": 2884176053,
+    "cfg": 2.0,
+    "diffusion_steps": 10,
+    "normalize": true,
+    "lang": "fr"
+  },
+  {
+    "name": "Vieux conteur au coin du feu",
+    "description": "Voix masculine française de conteur âgé, timbre patiné et légèrement rocailleux, ton bienveillant et malicieux, débit lent et posé avec des silences, idéale pour les contes, les légendes et les récits pour enfants",
+    "seed": 3361208947,
+    "cfg": 2.0,
+    "diffusion_steps": 10,
+    "normalize": true,
+    "lang": "fr"
+  },
+  {
+    "name": "Méditation guidée (voix féminine)",
+    "description": "Voix féminine française très douce et aérienne pour méditation guidée, extrêmement lente, presque chuchotée, ton apaisant et enveloppant, longues pauses, respiration calme, idéale pour la relaxation et le sommeil",
+    "seed": 1029384756,
+    "cfg": 2.0,
+    "diffusion_steps": 10,
+    "normalize": true,
+    "lang": "fr"
+  },
+  {
+    "name": "Pédagogue clair & précis",
+    "description": "Voix masculine française neutre et pédagogique, timbre clair et présent, ton didactique et bienveillant, débit régulier et articulé, idéale pour l'essai, le livre pratique et la vulgarisation",
+    "seed": 2470915638,
+    "cfg": 2.0,
+    "diffusion_steps": 10,
+    "normalize": true,
+    "lang": "fr"
+  },
+  {
+    "name": "Narratrice lumineuse & posée",
+    "description": "Voix féminine française lumineuse et posée, timbre clair et soyeux, ton élégant et maîtrisé, débit fluide et régulier, diction soignée, idéale pour la littérature blanche et le récit intimiste",
+    "seed": 4055721384,
+    "cfg": 2.0,
+    "diffusion_steps": 10,
+    "normalize": true,
+    "lang": "fr"
+  },
+  {
+    "name": "Narrateur dramatique & théâtral",
+    "description": "Voix masculine française théâtrale et ample, timbre riche et projeté, ton dramatique et habité, débit varié avec des ruptures marquées, idéale pour la fiction intense, l'épopée et le récit historique",
+    "seed": 1613947205,
+    "cfg": 2.0,
+    "diffusion_steps": 10,
+    "normalize": true,
+    "lang": "fr"
+  },
+  {
+    "name": "Edwin Dérivé (V1)",
+    "description": "",
+    "seed": 1234,
+    "cfg": 2.0,
+    "diffusion_steps": 10,
+    "normalize": true,
+    "lang": "fr",
+    "reference": "assets/voices/edwin_derive_v1_phrase.wav",
+    "reference_text": "Bienvenue dans cet espace de méditation conçu spécialement pour vous."
+  },
+  {
+    "name": "Aurore — livre audio",
+    "description": "",
+    "seed": 1235,
+    "cfg": 2.0,
+    "diffusion_steps": 10,
+    "normalize": true,
+    "lang": "fr",
+    "reference": "assets/voices/aurore_livre.wav",
+    "reference_text": "Il est neuf heures du matin, dans le bureau parisien d'une grande entreprise de service. Sarah, trente-huit ans, manager depuis cinq ans, entre dans la pièce. Elle a mal dormi. Elle pose son sac, allume son ordinateur. L'écran affiche trois cent quarante-sept mails non lus."
+  },
+  {
+    "name": "Aurore — méditation guidée",
+    "description": "",
+    "seed": 1236,
+    "cfg": 2.0,
+    "diffusion_steps": 10,
+    "normalize": true,
+    "lang": "fr",
+    "reference": "assets/voices/aurore_meditation.wav",
+    "reference_text": "Bienvenue dans cet espace de méditation conçu spécialement pour vous. Pendant les vingt prochaines minutes, je vous invite à mettre en pause vos responsabilités, vos emails et toute forme de distraction pour vous offrir un moment précieux de calme et de recentrage."
+  },
+  {
+    "name": "Alex Somerset",
+    "description": "",
+    "seed": 1237,
+    "cfg": 2.0,
+    "diffusion_steps": 10,
+    "normalize": true,
+    "lang": "fr",
+    "reference": "assets/voices/alex_somerset.wav",
+    "reference_text": "Si l'esprit commence à vagabonder, utilisez ce moment comme opportunité pour cultiver patience et bienveillance envers soi-même. Revenez simplement au souffle, sans jugement ni frustration. Nous allons maintenant entamer un cycle respiratoire conscient."
+  }
+]

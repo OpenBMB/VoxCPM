@@ -1,0 +1,39 @@
+{
+  "_comment": "Termes de neurosciences et de psychotraumatologie du catalogue. S'empile sur conf/pronunciation_fr.json : python scripts/narrate_book.py ... --lexicon conf/pronunciation_fr.json --lexicon conf/lexique/neurosciences.json",
+
+  "_regle": "Les entrées ci-dessous sont DÉSACTIVÉES (préfixe _ = ignoré). Écoutez d'abord : le moteur lit peut-être déjà « cortisol » ou « hippocampe » très bien, et une correction inutile ne peut que dégrader. Retirez le préfixe uniquement pour ce que vous avez entendu faux.",
+
+  "_methode": "Pour trouver la bonne graphie : python scripts/try_pronunciation.py --phrase '...' --mot amygdale --candidats 'amigdale' 'a-mig-dale' --voice '...'. Le premier extrait produit est toujours le texte non modifié, pour savoir si la correction bat le défaut de départ.",
+
+  "_frequences": "Mesurées sur les 20 livres de la file : TSPT 89, cortisol 60, EMDR 59, cortex 59, neuroplasticité 46, dopamine 41, préfrontal 36, hypervigilance 35, hippocampe 30, dissociation 29, rumination 28, sympathique 22, amygdale 20, parasympathique 19, vagal 15, accumbens 3. Un terme lu 89 fois coûte 89 fautes ; un terme lu 3 fois en coûte 3.",
+
+  "_sigles": "--- sigles, à épeler ou non selon ce qu'on entend ---",
+  "_EMDR": "E M D R",
+  "_TSPT": "T S P T",
+
+  "_latin": "--- termes latins, sans règle française qui les gouverne ---",
+  "_accumbens": "acumbennsse",
+  "_insula": "inn-sula",
+
+  "_anatomie": "--- structures cérébrales ---",
+  "_amygdale": "amigdale",
+  "_hippocampe": "hipocampe",
+  "_thalamus": "talamusse",
+  "_hypothalamus": "ipotalamusse",
+  "_cingulaire": "saingulaire",
+
+  "_hormones": "--- ---",
+  "_cortisol": "cortizol",
+  "_ocytocine": "ocitocine",
+  "_sérotonine": "sérotonine",
+
+  "_etrangers": "--- mots anglais lus avec des règles françaises ---",
+  "_mindfulness": "maïndfoulness",
+  "_flashback": "flachbaque",
+
+  "_noms": "--- noms propres du domaine ---",
+  "_Porges": "Porguesse",
+  "_Shapiro": "Chapiro",
+  "_Bessel van der Kolk": "Bessel vane der Kolk",
+  "_Francine": "Francine"
+}

@@ -160,23 +160,30 @@ def _has_mps() -> bool:
 
 
 def pick_runtime_dtype(device: str, configured_dtype: str) -> str:
-    """Pick a safe runtime dtype for the resolved device.
+    """Pick a safe/efficient runtime dtype for the resolved device.
 
     On Apple Silicon (MPS), bfloat16/float16 produce enough numerical drift
     in the diffusion AR loop that the output is glitched and the model's
-    badcase detector triggers infinite retries. float32 is the only stable
-    option today. CUDA and CPU keep whatever the checkpoint was trained with.
+    badcase detector triggers infinite retries — float32 is the only stable
+    option today.
 
-    Users can override with ``VOXCPM_MPS_DTYPE`` (e.g. ``bfloat16``) when
-    they want to test future MPS improvements.
+    On CPU, bfloat16/float16 have no native acceleration and are emulated, which
+    is markedly slower than native float32; we therefore upcast low-precision
+    checkpoints to float32 for speed (at the cost of ~2x RAM).
+
+    CUDA keeps whatever the checkpoint was trained with.
+
+    Override per device with ``VOXCPM_MPS_DTYPE`` / ``VOXCPM_CPU_DTYPE``
+    (e.g. ``bfloat16``) to opt back into the checkpoint dtype.
     """
-    if device != "mps":
+    env_var = {"mps": "VOXCPM_MPS_DTYPE", "cpu": "VOXCPM_CPU_DTYPE"}.get(device)
+    if env_var is None:  # cuda (and any other device): keep the checkpoint dtype
         return configured_dtype
 
-    override = os.environ.get("VOXCPM_MPS_DTYPE", "").strip().lower()
+    override = os.environ.get(env_var, "").strip().lower()
     if override:
         if override not in _VALID_DTYPE_OVERRIDES:
-            raise ValueError(f"VOXCPM_MPS_DTYPE='{override}' is not one of " f"{sorted(_VALID_DTYPE_OVERRIDES)}")
+            raise ValueError(f"{env_var}='{override}' is not one of {sorted(_VALID_DTYPE_OVERRIDES)}")
         return override
 
     if (configured_dtype or "").lower() in _LOW_PRECISION_DTYPES:

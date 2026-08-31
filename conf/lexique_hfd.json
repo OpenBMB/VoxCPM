@@ -1,0 +1,14 @@
+{
+  "_comment": "Lexique propre à « TENIR DEBOUT — La dépression masquée des cadres performants » (livre-33-depression-masquee). S'empile sur conf/pronunciation_fr.json, il ne le remplace pas.",
+
+  "_pourquoi": "L'abréviation HFD revient 160 fois et n'est jamais développée dans le texte : elle apparaît dès le chapitre 1. À l'écrit, un lecteur remonte quelques pages ou devine ; à l'oral il entend « ache-èf-dé » cent soixante fois sans savoir de quoi on parle. Edwin a choisi de la développer partout.",
+
+  "_ordre": "Le lexique applique les clés de la plus longue à la plus courte, ce qui règle les accords : « mécanisme HFD » et « les HFD » sont traités avant « HFD » seul, donc leur forme particulière gagne.",
+
+  "mécanisme HFD": "mécanisme de la dépression de haut fonctionnement",
+
+  "_pluriel": "Les trois « les HFD » sont suivis d'accords féminins pluriels déjà en place — « non encore prises en charge », « non aiguës » — donc seul le nom est à mettre au pluriel.",
+  "les HFD": "les dépressions de haut fonctionnement",
+
+  "HFD": "dépression de haut fonctionnement"
+}
