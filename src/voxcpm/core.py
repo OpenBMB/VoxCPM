@@ -11,6 +11,51 @@ from .model.voxcpm2 import VoxCPM2Model
 from .model.utils import next_and_close
 
 
+# Autoregressive quality degrades on long inputs: past a few hundred characters
+# the output drifts into distortion/instability (issue #372, worse on VoxCPM2).
+# Splitting the text into sentence-sized chunks and synthesizing each with the
+# same prompt cache keeps every generation short while preserving the voice.
+DEFAULT_MAX_CHUNK_CHARS = 200
+# Sentence-ending marks used as preferred split points (CJK + ASCII).
+_SENTENCE_DELIMITERS = "。！？；…!?;"
+
+
+def split_text_into_chunks(text: str, max_chars: int = DEFAULT_MAX_CHUNK_CHARS) -> list:
+    """Split ``text`` into chunks no longer than ``max_chars`` characters.
+
+    Splits preferentially after sentence-ending punctuation so chunk boundaries
+    fall on natural pauses; a single sentence longer than ``max_chars`` is
+    hard-sliced. Returns ``[text]`` unchanged when it already fits (or when
+    ``max_chars`` is non-positive, which disables splitting).
+    """
+    text = text.strip()
+    if not text:
+        return []
+    if max_chars <= 0 or len(text) <= max_chars:
+        return [text]
+
+    # Zero-width split after each run of sentence-ending marks, keeping them.
+    pieces = re.split(f"(?<=[{re.escape(_SENTENCE_DELIMITERS)}])", text)
+    chunks = []
+    buf = ""
+    for piece in pieces:
+        if not piece:
+            continue
+        if len(buf) + len(piece) <= max_chars:
+            buf += piece
+            continue
+        if buf:
+            chunks.append(buf.strip())
+            buf = ""
+        while len(piece) > max_chars:
+            chunks.append(piece[:max_chars].strip())
+            piece = piece[max_chars:]
+        buf = piece
+    if buf.strip():
+        chunks.append(buf.strip())
+    return [chunk for chunk in chunks if chunk]
+
+
 class VoxCPM:
     def __init__(
         self,
@@ -197,6 +242,7 @@ class VoxCPM:
         retry_badcase_ratio_threshold: float = 6.0,
         streaming: bool = False,
         seed: Optional[int] = None,
+        max_chunk_chars: int = DEFAULT_MAX_CHUNK_CHARS,
     ) -> Generator[np.ndarray, None, None]:
         """Synthesize speech for the given text and return a single waveform.
 
@@ -220,6 +266,11 @@ class VoxCPM:
             retry_badcase_ratio_threshold: Threshold for audio-to-text ratio.
             streaming: Whether to return a generator of audio chunks.
             seed: Optional random seed for reproducibility.
+            max_chunk_chars: Long inputs are split into chunks of at most this
+                many characters (on sentence boundaries) and synthesized
+                sequentially with the same prompt, avoiding the quality
+                degradation seen on long single-shot generations. Set to 0 or a
+                negative value to disable splitting.
         Returns:
             Generator of numpy.ndarray: 1D waveform array (float32) on CPU.
             Yields audio chunks for each generation step if ``streaming=True``,
@@ -285,29 +336,37 @@ class VoxCPM:
                     self.text_normalizer = TextNormalizer()
                 text = self.text_normalizer.normalize(text)
 
-            generate_result = self.tts_model._generate_with_prompt_cache(
-                target_text=text,
-                prompt_cache=fixed_prompt_cache,
-                min_len=min_len,
-                max_len=max_len,
-                inference_timesteps=inference_timesteps,
-                cfg_value=cfg_value,
-                retry_badcase=retry_badcase,
-                retry_badcase_max_times=retry_badcase_max_times,
-                retry_badcase_ratio_threshold=retry_badcase_ratio_threshold,
-                streaming=streaming,
-                seed=seed,
-            )
+            chunks = split_text_into_chunks(text, max_chars=max_chunk_chars) or [text]
+
+            def _synthesize(chunk_text: str):
+                return self.tts_model._generate_with_prompt_cache(
+                    target_text=chunk_text,
+                    prompt_cache=fixed_prompt_cache,
+                    min_len=min_len,
+                    max_len=max_len,
+                    inference_timesteps=inference_timesteps,
+                    cfg_value=cfg_value,
+                    retry_badcase=retry_badcase,
+                    retry_badcase_max_times=retry_badcase_max_times,
+                    retry_badcase_ratio_threshold=retry_badcase_ratio_threshold,
+                    streaming=streaming,
+                    seed=seed,
+                )
 
             if streaming:
-                try:
-                    for wav, _, _ in generate_result:
-                        yield wav.squeeze(0).cpu().numpy()
-                finally:
-                    generate_result.close()
+                for chunk_text in chunks:
+                    generate_result = _synthesize(chunk_text)
+                    try:
+                        for wav, _, _ in generate_result:
+                            yield wav.squeeze(0).cpu().numpy()
+                    finally:
+                        generate_result.close()
             else:
-                wav, _, _ = next_and_close(generate_result)
-                yield wav.squeeze(0).cpu().numpy()
+                parts = []
+                for chunk_text in chunks:
+                    wav, _, _ = next_and_close(_synthesize(chunk_text))
+                    parts.append(wav.squeeze(0).cpu().numpy())
+                yield parts[0] if len(parts) == 1 else np.concatenate(parts)
 
         finally:
             for tmp_path in temp_files:
