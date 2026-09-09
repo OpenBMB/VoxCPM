@@ -1,6 +1,7 @@
 launch.json
 .venv/
 __pycache__
+.coverage
 voxcpm.egg-info
 .DS_Store
 ./pretrained_models/

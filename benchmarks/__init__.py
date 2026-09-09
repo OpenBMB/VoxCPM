@@ -1,0 +1,1 @@
+"""Performance benchmarks for VoxCPM."""
