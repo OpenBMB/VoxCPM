@@ -159,6 +159,14 @@ def _has_mps() -> bool:
     return hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
 
 
+def _dtype_override(env_var: str) -> str:
+    """Read and validate a dtype override from ``env_var`` ('' when unset)."""
+    override = os.environ.get(env_var, "").strip().lower()
+    if override and override not in _VALID_DTYPE_OVERRIDES:
+        raise ValueError(f"{env_var}='{override}' is not one of " f"{sorted(_VALID_DTYPE_OVERRIDES)}")
+    return override
+
+
 def pick_runtime_dtype(device: str, configured_dtype: str) -> str:
     """Pick a safe runtime dtype for the resolved device.
 
@@ -168,15 +176,19 @@ def pick_runtime_dtype(device: str, configured_dtype: str) -> str:
     option today. CUDA and CPU keep whatever the checkpoint was trained with.
 
     Users can override with ``VOXCPM_MPS_DTYPE`` (e.g. ``bfloat16``) when
-    they want to test future MPS improvements.
+    they want to test future MPS improvements, and with ``VOXCPM_CUDA_DTYPE``
+    (e.g. ``float32``) to trade VRAM and speed for the fp32 numerics on CUDA
+    without touching the checkpoint config.
     """
     if device != "mps":
+        if device.startswith("cuda"):
+            override = _dtype_override("VOXCPM_CUDA_DTYPE")
+            if override:
+                return override
         return configured_dtype
 
-    override = os.environ.get("VOXCPM_MPS_DTYPE", "").strip().lower()
+    override = _dtype_override("VOXCPM_MPS_DTYPE")
     if override:
-        if override not in _VALID_DTYPE_OVERRIDES:
-            raise ValueError(f"VOXCPM_MPS_DTYPE='{override}' is not one of " f"{sorted(_VALID_DTYPE_OVERRIDES)}")
         return override
 
     if (configured_dtype or "").lower() in _LOW_PRECISION_DTYPES:
