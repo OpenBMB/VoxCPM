@@ -26,6 +26,7 @@ With voice cloning:
 import argparse
 import sys
 from pathlib import Path
+from datetime import datetime
 
 import soundfile as sf
 
@@ -35,6 +36,78 @@ from voxcpm.core import VoxCPM
 def parse_args():
     parser = argparse.ArgumentParser("VoxCPM full-finetune inference test (no LoRA)")
     parser.add_argument(
+        "--ckpt_dir",
+        type=str,
+        required=True,
+        help="Path to the full-finetune checkpoint directory",
+    )
+    parser.add_argument(
+        "--text",
+        type=str,
+        required=True,
+        help="Text to synthesize",
+    )
+    parser.add_argument(
+        "--prompt_audio",
+        type=str,
+        default=None,
+        help="Path to reference audio for voice cloning",
+    )
+    parser.add_argument(
+        "--prompt_text",
+        type=str,
+        default=None,
+        help="Transcript of the reference audio",
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default=None,
+        help="Path to save output wav (auto-generated if omitted)",
+    )
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+
+    print(f"Loading VoxCPM full-finetune model from: {args.ckpt_dir}")
+    # Initialize the core model directly from checkpoint directory
+    model = VoxCPM.from_pretrained(args.ckpt_dir)
+
+    # Determine final output path if not explicitly provided
+    if args.output is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        prefix = "clone" if args.prompt_audio else "tts"
+        args.output = f"{prefix}_{timestamp}.wav"
+        print(f"No output path specified. Defaulting to: {args.output}")
+
+    if args.prompt_audio:
+        if not args.prompt_text:
+            print("Error: --prompt_text is required when --prompt_audio is provided.")
+            sys.exit(1)
+        
+        print(f"Running zero-shot voice cloning using reference: {args.prompt_audio}")
+        wav, sr = model.voice_clone(
+            text=args.text,
+            prompt_audio=args.prompt_audio,
+            prompt_text=args.prompt_text
+        )
+    else:
+        print("Running standard text-to-speech inference...")
+        wav, sr = model.tts(text=args.text)
+
+    # Ensure output directory exists
+    out_path = Path(args.output)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Save the generated audio
+    sf.write(out_path, wav, sr)
+    print(f"Successfully saved generated audio to {out_path}")
+
+
+if __name__ == "__main__":
+    main()
         "--ckpt_dir",
         type=str,
         required=True,
