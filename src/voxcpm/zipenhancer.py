@@ -51,10 +51,12 @@ class ZipEnhancer:
         """
         if not os.path.exists(input_path):
             raise FileNotFoundError(f"Input audio file does not exist: {input_path}")
+        tmp_created = False
         # Create temporary file if no output path is specified
         if output_path is None:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
                 output_path = tmp_file.name
+            tmp_created = True
         try:
             # Perform denoising processing
             self._pipeline(input_path, output_path=output_path)
@@ -63,8 +65,8 @@ class ZipEnhancer:
                 self._normalize_loudness(output_path)
             return output_path
         except Exception as e:
-            # Clean up possibly created temporary files
-            if output_path and os.path.exists(output_path):
+            # Clean up temporary files only if we created them
+            if tmp_created and output_path and os.path.exists(output_path):
                 try:
                     os.unlink(output_path)
                 except OSError:
