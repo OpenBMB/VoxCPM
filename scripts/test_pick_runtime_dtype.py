@@ -58,6 +58,7 @@ for dt in sorted(_VALID_DTYPE_OVERRIDES):
         results.append(False)
 
 print("\n=== pick_runtime_dtype: non-mps is a no-op ===")
+os.environ.pop("VOXCPM_CUDA_DTYPE", None)
 results.append(expect(pick_runtime_dtype("cuda", "bfloat16"), "bfloat16", "cuda/bf16 untouched"))
 results.append(expect(pick_runtime_dtype("cpu", "float16"), "float16", "cpu/fp16 untouched"))
 results.append(expect(pick_runtime_dtype("cuda", "float32"), "float32", "cuda/fp32 untouched"))
@@ -80,6 +81,26 @@ results.append(expect(pick_runtime_dtype("mps", "bfloat16"), "fp16", "override i
 
 os.environ["VOXCPM_MPS_DTYPE"] = "  float32  "
 results.append(expect(pick_runtime_dtype("mps", "bfloat16"), "float32", "override is whitespace-trimmed"))
+
+print("\n=== pick_runtime_dtype: VOXCPM_CUDA_DTYPE override (cuda only) ===")
+os.environ.pop("VOXCPM_MPS_DTYPE", None)
+os.environ["VOXCPM_CUDA_DTYPE"] = "float32"
+results.append(expect(pick_runtime_dtype("cuda", "bfloat16"), "float32", "cuda override fp32 honored"))
+results.append(expect(pick_runtime_dtype("cuda:1", "bfloat16"), "float32", "cuda:N override honored"))
+results.append(expect(pick_runtime_dtype("cpu", "bfloat16"), "bfloat16", "cpu ignores the cuda override"))
+results.append(expect(pick_runtime_dtype("mps", "bfloat16"), "float32", "mps ignores the cuda override (own rule)"))
+os.environ["VOXCPM_CUDA_DTYPE"] = "  BF16  "
+results.append(expect(pick_runtime_dtype("cuda", "float32"), "bf16", "cuda override is case-insensitive + trimmed"))
+os.environ["VOXCPM_CUDA_DTYPE"] = "half"
+results.append(
+    expect_raises(
+        lambda: pick_runtime_dtype("cuda", "bfloat16"),
+        ValueError,
+        "cuda override=half rejected",
+    )
+)
+os.environ.pop("VOXCPM_CUDA_DTYPE", None)
+results.append(expect(pick_runtime_dtype("cuda", "bfloat16"), "bfloat16", "cuda unset -> checkpoint dtype"))
 
 print("\n=== pick_runtime_dtype: 'half' is no longer a valid override ===")
 os.environ["VOXCPM_MPS_DTYPE"] = "half"
