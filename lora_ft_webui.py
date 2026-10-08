@@ -21,7 +21,6 @@ default_pretrained_path = str(_v2_path) if _v2_path.exists() else (str(_v15_path
 
 from voxcpm.core import VoxCPM, resolve_model_path
 from voxcpm.model.voxcpm import LoRAConfig
-import numpy as np
 from funasr import AutoModel
 
 # --- Localization ---
@@ -328,9 +327,9 @@ def run_inference(text, prompt_wav, prompt_text, lora_selection, cfg_scale, step
         print("Disabling LoRA", file=sys.stderr)
         current_model.set_lora_enabled(False)
 
-    if seed != -1:
-        torch.manual_seed(seed)
-        np.random.seed(seed)
+    # -1 means random; any other value is handed to generate(), which seeds
+    # torch itself (a manual_seed here would be overwritten by it).
+    generation_seed = None if seed in (None, "", -1) else int(seed)
 
     # 处理 prompt 参数：必须同时为 None 或同时有值
     final_prompt_wav = None
@@ -363,6 +362,7 @@ def run_inference(text, prompt_wav, prompt_text, lora_selection, cfg_scale, step
             cfg_value=cfg_scale,
             inference_timesteps=steps,
             denoise=False,
+            seed=generation_seed,
         )
         return (current_model.tts_model.sample_rate, audio_np), "Generation Success"
     except Exception as e:
