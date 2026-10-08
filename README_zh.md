@@ -175,6 +175,7 @@ wav = model.generate(
     cfg_value=2.0,
     inference_timesteps=10,
     seed=42,
+    volume_multiplier=1.0,  # 相对参考音量的线性增益，例如 3.0 表示约 3 倍音量
 )
 sf.write("controllable_clone.wav", wav, model.tts_model.sample_rate)
 ```
