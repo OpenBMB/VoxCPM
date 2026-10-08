@@ -3,7 +3,9 @@ launch.json
 __pycache__
 voxcpm.egg-info
 .DS_Store
-./pretrained_models/
+pretrained_models/
+*.wav
+*.gguf
 app_local.py
 
 # Docker volume mount directories (large files, user-specific)
