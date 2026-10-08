@@ -563,6 +563,12 @@ def run_demo(
 ):
     demo = VoxCPMDemo(model_id=model_id, device=device)
     interface = create_demo_interface(demo)
+    # Warm up the model at startup instead of lazily on the first request.
+    # A multi-GB from_pretrained running inside the first click blocks that
+    # request for minutes and surfaces any load/download failure as an opaque
+    # per-request connection error; loading here fails fast and keeps the first
+    # generation responsive.
+    demo.get_or_load_voxcpm()
     interface.queue(max_size=10, default_concurrency_limit=1).launch(
         server_name=server_name,
         server_port=server_port,
