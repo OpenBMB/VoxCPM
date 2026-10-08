@@ -110,9 +110,12 @@ def split_paragraph(text: str, tokenize, lang="zh", token_max_n=80, token_min_n=
 # remove blank between chinese character
 def replace_blank(text: str):
     out_str = []
+    n = len(text)
     for i, c in enumerate(text):
         if c == " ":
-            if (text[i + 1].isascii() and text[i + 1] != " ") and (text[i - 1].isascii() and text[i - 1] != " "):
+            prev_ok = (i > 0) and text[i - 1].isascii() and text[i - 1] != " "
+            next_ok = (i < n - 1) and text[i + 1].isascii() and text[i + 1] != " "
+            if prev_ok and next_ok:
                 out_str.append(c)
         else:
             out_str.append(c)

@@ -39,13 +39,21 @@ def _manifest_features(
 
     for manifest_path in manifest_paths:
         with Path(manifest_path).open("r", encoding="utf-8") as manifest:
-            first_line = next((line for line in manifest if line.strip()), "")
-        if not first_line:
-            continue
-        first_record = json.loads(first_line)
-        for column, value in first_record.items():
-            if column not in features and value is not None:
-                features[column] = _feature_from_value(value)
+            sample_lines = []
+            for line in manifest:
+                stripped = line.strip()
+                if stripped:
+                    sample_lines.append(stripped)
+                    if len(sample_lines) >= 100:
+                        break
+        for line in sample_lines:
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            for column, value in record.items():
+                if column not in features and value is not None:
+                    features[column] = _feature_from_value(value)
     return Features(features)
 
 
