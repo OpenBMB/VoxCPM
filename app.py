@@ -225,10 +225,15 @@ _APP_THEME = gr.themes.Soft(
 
 
 class VoxCPMDemo:
-    def __init__(self, model_id: str = "openbmb/VoxCPM2", device: str = "auto") -> None:
+    def __init__(
+        self,
+        model_id: str = "openbmb/VoxCPM2",
+        device: str = "auto",
+        optimize: bool = True,
+    ) -> None:
         self.device = resolve_runtime_device(device, "cuda")
         logger.info(f"Running VoxCPM on device: {self.device}")
-        self.optimize = self.device.startswith("cuda")
+        self.optimize = optimize and self.device.startswith("cuda")
 
         self.asr_model_id = "iic/SenseVoiceSmall"
         self.asr_device = "cuda:0" if self.device.startswith("cuda") else "cpu"
@@ -560,13 +565,16 @@ def run_demo(
     show_error: bool = True,
     model_id: str = "openbmb/VoxCPM2",
     device: str = "auto",
+    optimize: bool = True,
+    inbrowser: bool = False,
 ):
-    demo = VoxCPMDemo(model_id=model_id, device=device)
+    demo = VoxCPMDemo(model_id=model_id, device=device, optimize=optimize)
     interface = create_demo_interface(demo)
     interface.queue(max_size=10, default_concurrency_limit=1).launch(
         server_name=server_name,
         server_port=server_port,
         show_error=show_error,
+        inbrowser=inbrowser,
         i18n=I18N,
         theme=_APP_THEME,
         css=_CUSTOM_CSS,
@@ -597,10 +605,18 @@ if __name__ == "__main__":
         default="auto",
         help="Runtime device: auto, cpu, mps, cuda, or cuda:N (default: auto)",
     )
+    parser.add_argument(
+        "--no-optimize",
+        action="store_true",
+        help="Disable torch.compile optimization (recommended on Windows)",
+    )
+    parser.add_argument("--inbrowser", action="store_true", help="Open the web interface after the server starts")
     args = parser.parse_args()
     run_demo(
         model_id=args.model_id,
         server_name=args.host,
         server_port=args.port,
         device=args.device,
+        optimize=not args.no_optimize,
+        inbrowser=args.inbrowser,
     )
