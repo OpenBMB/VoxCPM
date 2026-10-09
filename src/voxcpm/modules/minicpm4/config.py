@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 
 
 class RopeScalingConfig(BaseModel):
@@ -26,5 +26,5 @@ class MiniCPM4Config(BaseModel):
     dim_model_base: int
     scale_depth: float
     rope_theta: float
-    kv_channels: int = None
+    kv_channels: Optional[int] = None
     no_rope: bool = False
