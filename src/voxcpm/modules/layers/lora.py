@@ -6,6 +6,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+def require_lora_rank(r: int) -> int:
+    """Reject a negative rank.
+
+    ``r == 0`` disables the adapter on purpose. A negative rank used to take
+    that same path, so a typo trained the base layer and reported no error.
+    """
+    if isinstance(r, bool) or not isinstance(r, int) or r < 0:
+        raise ValueError(f"LoRA rank must be a non-negative integer, got {r}")
+    return r
+
+
 class LoRALinear(nn.Module):
     """
     LoRA 线性层：直接持有 weight/bias，保持与 nn.Linear 相同的 state_dict key 结构。
@@ -27,6 +38,7 @@ class LoRALinear(nn.Module):
         dropout: float = 0.0,
     ):
         super().__init__()
+        r = require_lora_rank(r)
         assert isinstance(base, nn.Linear), "LoRALinear only supports wrapping nn.Linear."
 
         self.in_features = base.in_features
