@@ -1,3 +1,4 @@
+import gc
 import os
 import re
 import sys
@@ -5,6 +6,7 @@ import logging
 import random
 import numpy as np
 import gradio as gr
+import torch
 from typing import Optional, Tuple
 from funasr import AutoModel
 from pathlib import Path
@@ -265,12 +267,25 @@ class VoxCPMDemo:
     def prompt_wav_recognition(self, prompt_wav: Optional[str]) -> str:
         if prompt_wav is None:
             return ""
-        res = self.get_or_load_asr_model().generate(
-            input=prompt_wav,
-            language="auto",
-            use_itn=True,
-        )
-        return res[0]["text"].split("|>")[-1]
+        try:
+            res = self.get_or_load_asr_model().generate(
+                input=prompt_wav,
+                language="auto",
+                use_itn=True,
+            )
+            return res[0]["text"].split("|>")[-1]
+        finally:
+            self.release_asr_model()
+
+    def release_asr_model(self) -> None:
+        """Release the request-scoped ASR model before TTS generation."""
+        if self.asr_model is None:
+            return
+        self.asr_model = None
+        gc.collect()
+        if self.asr_device.startswith("cuda") and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        logger.info("ASR model released after reference transcription.")
 
     def _build_generate_kwargs(
         self,
