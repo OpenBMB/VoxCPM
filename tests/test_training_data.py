@@ -153,3 +153,30 @@ def test_rejects_non_positive_worker_count(tmp_path):
 
     with pytest.raises(ValueError, match="num_proc must be at least 1"):
         load_audio_text_datasets(str(manifest), num_proc=0)
+
+
+def test_empty_first_list_column_does_not_coerce_later_rows(tmp_path):
+    first_audio = tmp_path / "first.wav"
+    second_audio = tmp_path / "second.wav"
+    _write_wav(first_audio, 0.5)
+    _write_wav(second_audio, 0.5)
+
+    # The first row's token id list is empty, so its element type is indeterminate.
+    # Inference must not fix the column as Sequence(string) and coerce the integer
+    # ids in later rows (which then crash collation via torch.tensor(..., int32)).
+    manifest = tmp_path / "train.jsonl"
+    _write_manifest(
+        manifest,
+        [
+            {"audio": str(first_audio), "text": "first", "token_ids": []},
+            {"audio": str(second_audio), "text": "second", "token_ids": [7, 8, 9]},
+        ],
+    )
+
+    train_ds, _ = load_audio_text_datasets(
+        train_manifest=str(manifest),
+        prepare_durations=True,
+    )
+
+    assert train_ds["token_ids"] == [[], [7, 8, 9]]
+    assert all(isinstance(v, int) for v in train_ds["token_ids"][1])
