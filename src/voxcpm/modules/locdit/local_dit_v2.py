@@ -4,11 +4,21 @@ import torch.nn as nn
 import math
 
 
+def require_sinusoidal_dim(dim: int) -> int:
+    """Reject widths that divide by zero inside the frequency formula.
+
+    ``log(10000) / (dim / 2 - 1)`` is undefined for ``dim < 4``. An even
+    width of 2 still crashes, so the evenness check alone is not enough.
+    """
+    if isinstance(dim, bool) or not isinstance(dim, int) or dim < 4 or dim % 2 != 0:
+        raise ValueError(f"SinusoidalPosEmb dim must be an even integer >= 4, got {dim}")
+    return dim
+
+
 class SinusoidalPosEmb(torch.nn.Module):
     def __init__(self, dim):
         super().__init__()
-        self.dim = dim
-        assert self.dim % 2 == 0, "SinusoidalPosEmb requires dim to be even"
+        self.dim = require_sinusoidal_dim(dim)
 
     def forward(self, x, scale=1000):
         if x.ndim < 1:
