@@ -328,6 +328,8 @@ curl http://localhost:8000/v1/audio/speech \
 
 **1. 下载 GGUF 权重**：从 [HF下载](https://huggingface.co/DennisHuang648/VoxCPM2-GGUF) | [ModelScope](https://modelscope.cn/models/DennisHuang/VoxCPM2-GGUF)，需要一个 **BaseLM**（F16 或 Q8_0）+ **Acoustic** 文件。Q8_0 体积减半，质量损失可忽略。
 
+> **从 PyTorch 权重转换？** `audiovae.pth` 中的 `decoder.sr_bin_boundaries` 以 int32 存储，可能导致后续 safetensors → GGUF 转换失败。导出前请将整数张量转为 float32；该采样率表在 fp32 下无损。转换片段见 [#416](https://github.com/OpenBMB/VoxCPM/issues/416)。
+
 **2. 编译**
 
 ```bash
