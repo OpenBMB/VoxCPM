@@ -231,7 +231,12 @@ def train(
     # Cosine + warmup scheduler from transformers:
     # - num_warmup_steps: warmup steps
     # - num_training_steps: total training steps (outer step count)
-    total_training_steps = max_steps if max_steps > 0 else num_iters
+    # max_steps caps training; size the schedule AND the loop to the real number of
+    # steps that will run. Previously only the scheduler used this while the loop ran
+    # num_iters, so setting max_steps < num_iters left the cosine LR to hit 0 at
+    # max_steps and then climb back up for the remaining steps (and training never
+    # stopped at max_steps). min() also respects a num_iters lowered below max_steps.
+    total_training_steps = min(num_iters, max_steps) if max_steps > 0 else num_iters
     scheduler = get_cosine_schedule_with_warmup(
         optimizer,
         num_warmup_steps=warmup_steps,
@@ -298,7 +303,7 @@ def train(
             return next(train_iter)
 
     with tracker.live():
-        for step in range(start_step, num_iters):
+        for step in range(start_step, total_training_steps):
             # update resume step so signal handler can save current progress
             resume["step"] = step
             tracker.step = step
@@ -325,7 +330,7 @@ def train(
                             processed["loss_mask"],
                             processed["position_ids"],
                             processed["labels"],
-                            progress=step / max(1, num_iters),
+                            progress=step / max(1, total_training_steps),
                         )
 
                     total_loss = 0.0
@@ -351,7 +356,7 @@ def train(
             accelerator.update()
             scheduler.step()
 
-            if step % log_interval == 0 or step == num_iters - 1:
+            if step % log_interval == 0 or step == total_training_steps - 1:
                 loss_values = {k: v.item() if isinstance(v, torch.Tensor) else float(v) for k, v in loss_dict.items()}
                 loss_values["lr"] = float(optimizer.param_groups[0]["lr"])
                 # Account for all GPUs when converting steps to epochs.
@@ -360,7 +365,7 @@ def train(
                 loss_values["grad_norm"] = float(grad_norm)
                 tracker.log_metrics(loss_values, split="train")
 
-            if val_loader is not None and (step % valid_interval == 0 or step == num_iters - 1):
+            if val_loader is not None and (step % valid_interval == 0 or step == total_training_steps - 1):
                 validate(
                     model,
                     val_loader,
@@ -379,11 +384,11 @@ def train(
                     valid_interval=valid_interval,
                 )
 
-            if (step % save_interval == 0 or step == num_iters - 1) and accelerator.rank == 0:
+            if (step % save_interval == 0 or step == total_training_steps - 1) and accelerator.rank == 0:
                 save_checkpoint(model, optimizer, scheduler, save_dir, step, pretrained_path, hf_model_id, distribute)
 
     if accelerator.rank == 0:
-        save_checkpoint(model, optimizer, scheduler, save_dir, num_iters, pretrained_path, hf_model_id, distribute)
+        save_checkpoint(model, optimizer, scheduler, save_dir, total_training_steps, pretrained_path, hf_model_id, distribute)
     if writer:
         writer.close()
 
