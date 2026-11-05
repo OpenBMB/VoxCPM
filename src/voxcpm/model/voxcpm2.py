@@ -162,6 +162,7 @@ class VoxCPM2Model(nn.Module):
         audio_vae: AudioVAEV2,
         lora_config: LoRAConfig = None,
         device: str | None = None,
+        batch_size: int = 1,
     ):
         super().__init__()
         self.config = config
@@ -181,7 +182,7 @@ class VoxCPM2Model(nn.Module):
 
         # Text-Semantic LM
         self.base_lm = MiniCPMModel(config.lm_config)
-        self.base_lm.setup_cache(1, config.max_length, self.device, get_dtype(self.config.dtype))
+        self.base_lm.setup_cache(batch_size, config.max_length, self.device, get_dtype(self.config.dtype))
 
         self.text_tokenizer = mask_multichar_chinese_tokens(tokenizer)
         self.audio_start_token = 101
@@ -196,7 +197,7 @@ class VoxCPM2Model(nn.Module):
         residual_lm_config.vocab_size = 0
         residual_lm_config.no_rope = config.residual_lm_no_rope
         self.residual_lm = MiniCPMModel(residual_lm_config)
-        self.residual_lm.setup_cache(1, config.max_length, self.device, get_dtype(self.config.dtype))
+        self.residual_lm.setup_cache(batch_size, config.max_length, self.device, get_dtype(self.config.dtype))
 
         # Local Encoder
         encoder_config = config.lm_config.model_copy(deep=True)
@@ -1115,13 +1116,13 @@ class VoxCPM2Model(nn.Module):
                 break
 
             lm_hidden = self.base_lm.forward_step(
-                curr_embed[:, 0, :], torch.tensor([self.base_lm.kv_cache.step()], device=curr_embed.device)
+                curr_embed[:, 0, :], self.base_lm.kv_cache.step()
             ).clone()
 
             lm_hidden = self.fsq_layer(lm_hidden)
             curr_residual_input = self.fusion_concat_proj(torch.cat((lm_hidden, curr_embed[:, 0, :]), dim=-1))
             residual_hidden = self.residual_lm.forward_step(
-                curr_residual_input, torch.tensor([self.residual_lm.kv_cache.step()], device=curr_embed.device)
+                curr_residual_input, self.residual_lm.kv_cache.step()
             ).clone()
 
         if not streaming:
@@ -1138,6 +1139,7 @@ class VoxCPM2Model(nn.Module):
         training: bool = False,
         device: str | None = None,
         lora_config: LoRAConfig = None,
+        batch_size: int = 1,
     ):
         with open(os.path.join(path, "config.json"), "r", encoding="utf-8") as _cfg_f:
             config = VoxCPMConfig.model_validate_json(_cfg_f.read())
@@ -1162,7 +1164,7 @@ class VoxCPM2Model(nn.Module):
             raise FileNotFoundError(
                 f"AudioVAE checkpoint not found. Expected either {audiovae_safetensors_path} or {audiovae_pth_path}"
             )
-        model = cls(config, tokenizer, audio_vae, lora_config, device=device)
+        model = cls(config, tokenizer, audio_vae, lora_config, device=device, batch_size=batch_size)
         if not training:
             lm_dtype = get_dtype(model.config.dtype)
             model = model.to(lm_dtype)

@@ -118,6 +118,7 @@ class VoxCPMModel(nn.Module):
         audio_vae: AudioVAE,
         lora_config: LoRAConfig = None,
         device: str | None = None,
+        batch_size: int = 1,
     ):
         super().__init__()
         self.config = config
@@ -137,7 +138,7 @@ class VoxCPMModel(nn.Module):
 
         # Text-Semantic LM
         self.base_lm = MiniCPMModel(config.lm_config)
-        self.base_lm.setup_cache(1, config.max_length, self.device, get_dtype(self.config.dtype))
+        self.base_lm.setup_cache(batch_size, config.max_length, self.device, get_dtype(self.config.dtype))
 
         self.text_tokenizer = mask_multichar_chinese_tokens(tokenizer)
         self.audio_start_token = 101
@@ -149,7 +150,7 @@ class VoxCPMModel(nn.Module):
         residual_lm_config.num_hidden_layers = config.residual_lm_num_layers
         residual_lm_config.vocab_size = 0
         self.residual_lm = MiniCPMModel(residual_lm_config)
-        self.residual_lm.setup_cache(1, config.max_length, self.device, get_dtype(self.config.dtype))
+        self.residual_lm.setup_cache(batch_size, config.max_length, self.device, get_dtype(self.config.dtype))
 
         # Local Encoder
         encoder_config = config.lm_config.model_copy(deep=True)
@@ -885,6 +886,7 @@ class VoxCPMModel(nn.Module):
         training: bool = False,
         device: str | None = None,
         lora_config: LoRAConfig = None,
+        batch_size: int = 1,
     ):
         with open(os.path.join(path, "config.json"), "r", encoding="utf-8") as _cfg_f:
             config = VoxCPMConfig.model_validate_json(_cfg_f.read())
@@ -909,7 +911,7 @@ class VoxCPMModel(nn.Module):
             raise FileNotFoundError(
                 f"AudioVAE checkpoint not found. Expected either {audiovae_safetensors_path} or {audiovae_pth_path}"
             )
-        model = cls(config, tokenizer, audio_vae, lora_config, device=device)
+        model = cls(config, tokenizer, audio_vae, lora_config, device=device, batch_size=batch_size)
         if not training:
             lm_dtype = get_dtype(model.config.dtype)
             model = model.to(lm_dtype)
