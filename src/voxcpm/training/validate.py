@@ -103,29 +103,32 @@ def validate_manifest(
 
     manifest_dir = path.parent
 
+    limited = max_samples > 0
+    saw_any_line = False
     try:
         with open(path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
+            lines = []
+            for i, line in enumerate(f):
+                saw_any_line = True
+                line = line.strip()
+                if not line:
+                    continue
+                lines.append((i, line))
+                if limited and len(lines) >= max_samples:
+                    break
     except Exception as e:
         result.errors.append(f"Cannot read manifest file: {e}")
         return result
 
-    if not lines:
+    if not saw_any_line:
         result.errors.append("Manifest file is empty")
         return result
 
     samples_to_check = len(lines)
-    if max_samples > 0:
-        samples_to_check = min(samples_to_check, max_samples)
-
     missing_audio_count = 0
     empty_text_count = 0
 
-    for i, line in enumerate(lines[:samples_to_check]):
-        line = line.strip()
-        if not line:
-            continue
-
+    for i, line in lines:
         result.total_samples += 1
 
         # Check JSON validity
@@ -207,8 +210,8 @@ def validate_manifest(
         if not has_error:
             result.valid_samples += 1
 
-        if verbose and (i + 1) % 100 == 0:
-            print(f"  Validated {i + 1}/{samples_to_check} samples...", file=sys.stderr)
+        if verbose and result.total_samples % 100 == 0:
+            print(f"  Validated {result.total_samples}/{samples_to_check} samples...", file=sys.stderr)
 
     # Summarize truncated errors
     if missing_audio_count > 5:
