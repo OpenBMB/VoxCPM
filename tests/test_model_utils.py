@@ -23,6 +23,7 @@ spec.loader.exec_module(utils)
 def test_resolve_runtime_device_auto_falls_back_to_cpu(monkeypatch):
     monkeypatch.setattr(utils.torch.cuda, "is_available", lambda: False)
     monkeypatch.setattr(utils, "_has_mps", lambda: False)
+    monkeypatch.setattr(utils, "current_accelerator_device_type", lambda: None)
 
     assert utils.resolve_runtime_device(None, "cuda") == "cpu"
 
@@ -30,6 +31,7 @@ def test_resolve_runtime_device_auto_falls_back_to_cpu(monkeypatch):
 def test_resolve_runtime_device_auto_uses_mps_when_available(monkeypatch):
     monkeypatch.setattr(utils.torch.cuda, "is_available", lambda: False)
     monkeypatch.setattr(utils, "_has_mps", lambda: True)
+    monkeypatch.setattr(utils, "current_accelerator_device_type", lambda: None)
 
     assert utils.resolve_runtime_device("auto", "cuda") == "mps"
 
@@ -47,6 +49,37 @@ def test_resolve_runtime_device_rejects_unavailable_explicit_cuda(monkeypatch):
 
     with pytest.raises(ValueError, match="CUDA is not available"):
         utils.resolve_runtime_device("cuda:0", "cuda")
+
+
+def test_resolve_runtime_device_auto_uses_non_cuda_accelerator(monkeypatch):
+    """A machine with only a non-CUDA accelerator (e.g. Ascend NPU) must use it."""
+
+    def fake_available(device_type: str) -> bool:
+        return device_type == "npu"
+
+    monkeypatch.setattr(utils.torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(utils, "_has_mps", lambda: False)
+    monkeypatch.setattr(utils, "current_accelerator_device_type", lambda: "npu")
+    monkeypatch.setattr(utils, "_has_backend", fake_available)
+
+    assert utils.resolve_runtime_device(None, "cuda") == "npu"
+    assert utils.resolve_runtime_device("auto", "cuda") == "npu"
+
+
+def test_resolve_runtime_device_accepts_explicit_non_cuda_accelerator(monkeypatch):
+    def fake_available(device_type: str) -> bool:
+        return device_type == "npu"
+
+    monkeypatch.setattr(utils, "_has_backend", fake_available)
+
+    assert utils.resolve_runtime_device("npu:0", "cuda") == "npu:0"
+
+
+def test_resolve_runtime_device_rejects_unavailable_accelerator(monkeypatch):
+    monkeypatch.setattr(utils, "_has_backend", lambda device_type: False)
+
+    with pytest.raises(ValueError, match="Unsupported or unavailable device 'npu:0'"):
+        utils.resolve_runtime_device("npu:0", "cuda")
 
 
 def test_materialize_generation_seed_preserves_explicit_seed():
