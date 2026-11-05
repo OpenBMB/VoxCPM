@@ -296,7 +296,8 @@ def test_legacy_root_args_still_work_and_warn(monkeypatch, tmp_path, capsys):
     assert dummy_model.calls[0]["text"] == "hello"
 
 
-def test_batch_subcommand_applies_control(monkeypatch, tmp_path):
+@pytest.mark.parametrize("legacy", [False, True])
+def test_batch_subcommand_applies_control(monkeypatch, tmp_path, capsys, legacy):
     dummy_model = DummyModel()
     input_file = tmp_path / "texts.txt"
     input_file.write_text("hello\nworld\n", encoding="utf-8")
@@ -306,8 +307,8 @@ def test_batch_subcommand_applies_control(monkeypatch, tmp_path):
 
     run_main(
         monkeypatch,
-        [
-            "batch",
+        ([] if legacy else ["batch"])
+        + [
             "--input",
             str(input_file),
             "--output-dir",
@@ -321,6 +322,49 @@ def test_batch_subcommand_applies_control(monkeypatch, tmp_path):
         "(calm narrator)hello",
         "(calm narrator)world",
     ]
+    assert "Batch finished: 2/2 succeeded" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.parametrize("failure_stage", ["generate", "write"])
+@pytest.mark.parametrize("failed_texts", [{"first"}, {"first", "second", "third"}])
+def test_batch_exits_nonzero_after_processing_remaining_lines(
+    monkeypatch, tmp_path, capsys, legacy, failure_stage, failed_texts
+):
+    dummy_model = DummyModel()
+    attempted = []
+    written = []
+    texts = ["first", "second", "third"]
+    input_file = tmp_path / "texts.txt"
+    input_file.write_text("\n".join(texts), encoding="utf-8")
+
+    def generate(**kwargs):
+        text = kwargs["text"]
+        attempted.append(text)
+        if failure_stage == "generate" and text in failed_texts:
+            raise RuntimeError("generation failed")
+        return DummyModel.generate(dummy_model, **kwargs)
+
+    def write(path, audio, sample_rate):
+        if failure_stage == "write" and attempted[-1] in failed_texts:
+            raise OSError("write failed")
+        written.append(Path(path).name)
+
+    monkeypatch.setattr(cli, "load_model", lambda args: dummy_model)
+    monkeypatch.setattr(dummy_model, "generate", generate)
+    monkeypatch.setitem(sys.modules, "soundfile", types.SimpleNamespace(write=write))
+    argv = [] if legacy else ["batch"]
+    argv += ["--input", str(input_file), "--output-dir", str(tmp_path / "outs")]
+
+    with pytest.raises(SystemExit) as exc:
+        run_main(monkeypatch, argv)
+
+    assert exc.value.code == 1
+    assert attempted == texts
+    assert written == [f"output_{i:03d}.wav" for i, text in enumerate(texts, 1) if text not in failed_texts]
+    stderr = capsys.readouterr().err
+    assert f"Batch finished: {len(texts) - len(failed_texts)}/{len(texts)} succeeded" in stderr
+    assert "Failed on line 1:" in stderr
 
 
 def test_design_writes_timestamp_json_when_requested(monkeypatch, tmp_path):
