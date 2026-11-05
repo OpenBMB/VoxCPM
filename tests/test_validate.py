@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
 import tempfile
 import types
@@ -34,8 +33,8 @@ def tmp_dir():
 def _create_wav(path: Path, duration_s: float = 1.0, sr: int = 16000):
     """Create a minimal valid WAV file."""
     try:
-        import soundfile as sf
         import numpy as np
+        import soundfile as sf
 
         samples = int(duration_s * sr)
         data = np.zeros(samples, dtype=np.float32)
@@ -58,8 +57,7 @@ def _create_wav(path: Path, duration_s: float = 1.0, sr: int = 16000):
 
 def _write_manifest(path: Path, entries: list[dict]):
     with open(path, "w", encoding="utf-8") as f:
-        for entry in entries:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        f.writelines(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries)
 
 
 class TestValidateManifest:
@@ -200,8 +198,8 @@ class TestValidateManifest:
     def test_sample_rate_mismatch(self, tmp_dir):
         """A file with a different sample rate should be reported as an error."""
         try:
-            import soundfile as sf
             import numpy as np
+            import soundfile as sf
         except ImportError:
             pytest.skip("soundfile not available")
 

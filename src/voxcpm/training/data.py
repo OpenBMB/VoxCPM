@@ -1,11 +1,18 @@
 import json
 import math
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 import argbind
 import torch
-from datasets import Audio, Dataset, DatasetDict, Features, Sequence, Value, load_dataset
+from datasets import (
+    Audio,
+    Dataset,
+    DatasetDict,
+    Features,
+    Sequence,
+    Value,
+    load_dataset,
+)
 from torch.utils.data import Dataset as TorchDataset
 
 from ..model.voxcpm import VoxCPMConfig
@@ -20,7 +27,7 @@ DEFAULT_ID_COLUMN = "dataset_id"
 
 def _manifest_features(
     *,
-    manifest_paths: List[str],
+    manifest_paths: list[str],
     text_column: str,
     audio_column: str,
     ref_audio_column: str,
@@ -88,13 +95,13 @@ def _read_audio_duration(path: str, column: str) -> float:
 
 
 def _prepare_audio_metadata(
-    example: Dict,
+    example: dict,
     *,
     audio_column: str,
     ref_audio_column: str,
     manifest_dir: str,
     prepare_durations: bool,
-) -> Dict:
+) -> dict:
     audio_path = _resolve_audio_path(example.get(audio_column), manifest_dir)
     ref_audio_path = _resolve_audio_path(example.get(ref_audio_column), manifest_dir)
 
@@ -125,7 +132,7 @@ def load_audio_text_datasets(
     sample_rate: int = 16_000,
     num_proc: int = 1,
     prepare_durations: bool = False,
-) -> Tuple[Dataset, Optional[Dataset]]:
+) -> tuple[Dataset, Dataset | None]:
     if num_proc < 1:
         raise ValueError(f"num_proc must be at least 1, got {num_proc}.")
 
@@ -194,7 +201,7 @@ def compute_sample_lengths(
     ds: Dataset,
     audio_vae_fps: int = 25,
     patch_size: int = 1,
-) -> List[int]:
+) -> list[int]:
     """
     预估每个样本经过 packer 之后的大致序列长度（text+audio），用于过滤超长样本。
 
@@ -274,7 +281,7 @@ class HFVoxCPMDataset(TorchDataset):
         return sample
 
     @staticmethod
-    def pad_sequences(seqs: List[torch.Tensor], pad_value: float):
+    def pad_sequences(seqs: list[torch.Tensor], pad_value: float):
         if not seqs:
             return torch.empty(0)
         max_len = max(seq.shape[0] for seq in seqs)
@@ -287,7 +294,7 @@ class HFVoxCPMDataset(TorchDataset):
         return torch.stack(padded)
 
     @classmethod
-    def collate_fn(cls, batch: List[Dict]):
+    def collate_fn(cls, batch: list[dict]):
         text_tensors = [torch.tensor(sample["text_ids"], dtype=torch.int32) for sample in batch]
         audio_tensors = [torch.tensor(sample["audio_array"], dtype=torch.float32) for sample in batch]
         dataset_ids = torch.tensor([sample["dataset_id"] for sample in batch], dtype=torch.int32)
@@ -338,7 +345,7 @@ class BatchProcessor:
             audio_vae=self.audio_vae,
         )
 
-    def __call__(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    def __call__(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         audio_tokens = batch["audio_tokens"].to(self.device)
         text_tokens = batch["text_tokens"].to(self.device)
         task_ids = batch["task_ids"].to(self.device)

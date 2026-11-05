@@ -1,5 +1,5 @@
 import os
-from typing import List, Optional
+
 import torch
 from transformers import PreTrainedTokenizer
 
@@ -24,7 +24,7 @@ def next_and_close(gen):
         gen.close()
 
 
-def materialize_generation_seed(seed: Optional[int]) -> int:
+def materialize_generation_seed(seed: int | None) -> int:
     """Return a concrete seed for a generation request."""
     if seed is not None:
         return int(seed)
@@ -77,7 +77,7 @@ def mask_multichar_chinese_tokens(tokenizer: PreTrainedTokenizer):
             self.tokenizer = base_tokenizer
             self.multichar_tokens = multichar_tokens
 
-        def tokenize(self, text: str, **kwargs) -> List[str]:
+        def tokenize(self, text: str, **kwargs) -> list[str]:
             """Tokenize text and split multi-character Chinese tokens into single characters.
 
             Args:
@@ -111,7 +111,7 @@ def mask_multichar_chinese_tokens(tokenizer: PreTrainedTokenizer):
 
             return processed
 
-        def __call__(self, text: str, **kwargs) -> List[int]:
+        def __call__(self, text: str, **kwargs) -> list[int]:
             """Call the tokenizer and return token IDs.
 
             This method provides the same interface as the original tokenizer
@@ -133,23 +133,17 @@ def mask_multichar_chinese_tokens(tokenizer: PreTrainedTokenizer):
                 result = self.tokenizer.convert_tokens_to_ids(tokens)
                 return result
             except Exception as e:
-                raise ValueError(f"Tokenization failed: {str(e)}") from e
+                raise ValueError(f"Tokenization failed: {e!s}") from e
 
     return CharTokenizerWrapper(tokenizer)
 
 
 def get_dtype(dtype: str):
-    if dtype == "bfloat16":
+    if dtype == "bfloat16" or dtype == "bf16":
         return torch.bfloat16
-    elif dtype == "bf16":
-        return torch.bfloat16
-    elif dtype == "float16":
+    elif dtype == "float16" or dtype == "fp16":
         return torch.float16
-    elif dtype == "fp16":
-        return torch.float16
-    elif dtype == "float32":
-        return torch.float32
-    elif dtype == "fp32":
+    elif dtype == "float32" or dtype == "fp32":
         return torch.float32
     else:
         raise ValueError(f"Unsupported dtype: {dtype}")
@@ -184,7 +178,7 @@ def pick_runtime_dtype(device: str, configured_dtype: str) -> str:
     return configured_dtype
 
 
-def auto_select_device(preferred_device: Optional[str] = "cuda") -> str:
+def auto_select_device(preferred_device: str | None = "cuda") -> str:
     """
     Choose a runtime device automatically.
 
@@ -208,7 +202,7 @@ def auto_select_device(preferred_device: Optional[str] = "cuda") -> str:
     return "cpu"
 
 
-def resolve_runtime_device(device: Optional[str], configured_device: str = "cuda") -> str:
+def resolve_runtime_device(device: str | None, configured_device: str = "cuda") -> str:
     """
     Resolve the actual runtime device.
 

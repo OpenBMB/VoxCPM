@@ -4,7 +4,6 @@ import contextlib
 import sys
 import time
 from pathlib import Path
-from typing import Dict, Optional
 
 
 class TrainingTracker:
@@ -20,7 +19,7 @@ class TrainingTracker:
         self,
         *,
         writer=None,
-        log_file: Optional[str] = None,
+        log_file: str | None = None,
         rank: int = 0,
     ):
         self.writer = writer
@@ -42,7 +41,7 @@ class TrainingTracker:
                 with self.log_file.open("a", encoding="utf-8") as f:
                     f.write(message + "\n")
 
-    def log_metrics(self, metrics: Dict[str, float], split: str):
+    def log_metrics(self, metrics: dict[str, float], split: str):
         if self.rank == 0:
             now = time.time()
             dt_str = ""

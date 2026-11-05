@@ -1,12 +1,11 @@
 import math
-from typing import List
 
 import numpy as np
 import torch
-from torch import nn
 import torch.nn.functional as F
-from torch.nn.utils import weight_norm
 from pydantic import BaseModel
+from torch import nn
+from torch.nn.utils import weight_norm
 
 
 def WNConv1d(*args, **kwargs):
@@ -269,10 +268,10 @@ class CausalDecoder(nn.Module):
 
 class AudioVAEConfig(BaseModel):
     encoder_dim: int = 128
-    encoder_rates: List[int] = [2, 5, 8, 8]
+    encoder_rates: list[int] = [2, 5, 8, 8]
     latent_dim: int = 64
     decoder_dim: int = 1536
-    decoder_rates: List[int] = [8, 8, 5, 2]
+    decoder_rates: list[int] = [8, 8, 5, 2]
     depthwise: bool = True
     sample_rate: int = 16000
     use_noise_block: bool = False

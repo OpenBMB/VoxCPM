@@ -1,7 +1,8 @@
 # some functions are copied from https://github.com/FunAudioLLM/CosyVoice/blob/main/cosyvoice/utils/frontend_utils.py
 import re
-import regex
+
 import inflect
+import regex
 from wetext import Normalizer
 
 chinese_char_pattern = re.compile(r"[\u4e00-\u9fff]+")

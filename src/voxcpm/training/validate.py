@@ -10,7 +10,6 @@ import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
 
 
 @dataclass
@@ -19,10 +18,10 @@ class ValidationResult:
 
     total_samples: int = 0
     valid_samples: int = 0
-    errors: List[str] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
-    audio_durations: List[float] = field(default_factory=list)
-    text_lengths: List[int] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    audio_durations: list[float] = field(default_factory=list)
+    text_lengths: list[int] = field(default_factory=list)
     has_ref_audio: int = 0
 
     @property
@@ -30,7 +29,7 @@ class ValidationResult:
         return len(self.errors) == 0 and self.valid_samples > 0
 
 
-def _check_audio_file(audio_path: str, sample_rate: int) -> Optional[str]:
+def _check_audio_file(audio_path: str, sample_rate: int) -> str | None:
     """Check if an audio file exists, is readable, and matches expected sample rate.
 
     Returns an error message, or None if the file is valid.
@@ -53,7 +52,7 @@ def _check_audio_file(audio_path: str, sample_rate: int) -> Optional[str]:
         return f"Cannot read audio file {audio_path}: {e}"
 
 
-def _get_audio_duration(audio_path: str) -> Optional[float]:
+def _get_audio_duration(audio_path: str) -> float | None:
     """Get audio duration in seconds. Returns None if unavailable."""
     try:
         import soundfile as sf
@@ -224,7 +223,7 @@ def validate_manifest(
 def print_validation_report(result: ValidationResult, manifest_path: str) -> None:
     """Print a human-readable validation report to stderr."""
     print(f"\n{'=' * 60}", file=sys.stderr)
-    print(f"  VoxCPM Training Data Validation Report", file=sys.stderr)
+    print("  VoxCPM Training Data Validation Report", file=sys.stderr)
     print(f"{'=' * 60}", file=sys.stderr)
     print(f"  Manifest : {manifest_path}", file=sys.stderr)
     print(f"  Samples  : {result.valid_samples}/{result.total_samples} valid", file=sys.stderr)
@@ -239,7 +238,7 @@ def print_validation_report(result: ValidationResult, manifest_path: str) -> Non
     if result.audio_durations:
         durations = sorted(result.audio_durations)
         total_hrs = sum(durations) / 3600
-        print(f"\n  Audio Duration Statistics:", file=sys.stderr)
+        print("\n  Audio Duration Statistics:", file=sys.stderr)
         print(f"    Total    : {total_hrs:.2f} hours", file=sys.stderr)
         print(
             f"    Range    : {durations[0]:.2f}s — {durations[-1]:.1f}s",
@@ -255,7 +254,7 @@ def print_validation_report(result: ValidationResult, manifest_path: str) -> Non
     # Text length statistics
     if result.text_lengths:
         lengths = sorted(result.text_lengths)
-        print(f"\n  Text Length Statistics (characters):", file=sys.stderr)
+        print("\n  Text Length Statistics (characters):", file=sys.stderr)
         print(
             f"    Range    : {lengths[0]} — {lengths[-1]}",
             file=sys.stderr,

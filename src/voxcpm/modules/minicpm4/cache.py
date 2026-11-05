@@ -1,4 +1,4 @@
-from typing import List, Tuple
+
 import torch
 
 
@@ -28,7 +28,7 @@ class StaticKVCache:
         )
         self.current_length = 0
 
-    def get_layer_cache(self, layer_idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    def get_layer_cache(self, layer_idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         return self.kv_cache[0, layer_idx], self.kv_cache[1, layer_idx]
 
     def step(self) -> int:
@@ -39,7 +39,7 @@ class StaticKVCache:
         self.current_length += 1
         return ret
 
-    def fill_caches(self, kv_caches: List[Tuple[torch.Tensor, torch.Tensor]]):
+    def fill_caches(self, kv_caches: list[tuple[torch.Tensor, torch.Tensor]]):
         self.current_length = kv_caches[0][0].size(2)
         self.kv_cache.zero_()
         for i in range(self.num_layers):

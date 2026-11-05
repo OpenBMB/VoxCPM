@@ -1,9 +1,8 @@
-from typing import Tuple
 
 import torch
 import torch.nn.functional as F
-from torch.func import jvp
 from pydantic import BaseModel
+from torch.func import jvp
 
 from .local_dit import VoxCPMLocDiT
 
@@ -15,8 +14,8 @@ class CfmConfig(BaseModel):
     training_cfg_rate: float = 0.1
     inference_cfg_rate: float = 1.0
     reg_loss_type: str = "l1"
-    ratio_r_neq_t_range: Tuple[float, float] = (0.25, 0.75)
-    noise_cond_prob_range: Tuple[float, float] = (0.0, 0.0)
+    ratio_r_neq_t_range: tuple[float, float] = (0.25, 0.75)
+    noise_cond_prob_range: tuple[float, float] = (0.0, 0.0)
     noise_cond_scale: float = 0.0
 
 
