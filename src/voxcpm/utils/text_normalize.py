@@ -19,6 +19,7 @@ def replace_corner_mark(text):
     text = text.replace("√", "根号")
     text = text.replace("≈", "约等于")
     text = text.replace("<", "小于")
+    text = text.replace(">", "大于")
     return text
 
 
@@ -133,10 +134,14 @@ def clean_markdown(md_text: str) -> str:
     md_text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", md_text)
 
     # 替换无序列表符号
-    md_text = re.sub(r"^(\s*)-\s+", r"\1", md_text, flags=re.MULTILINE)
+    md_text = re.sub(r"^(\s*)[-*+]\s+", r"\1", md_text, flags=re.MULTILINE)
 
-    # 去除HTML标签
-    md_text = re.sub(r"<[^>]+>", "", md_text)
+    # 保留加粗里的词，只去掉标记
+    md_text = re.sub(r"\*\*(.+?)\*\*", r"\1", md_text)
+    md_text = re.sub(r"__(.+?)__", r"\1", md_text)
+
+    # 只去掉看起来像标签的片段。< b > 是比较，不是 HTML。
+    md_text = re.sub(r"</?[A-Za-z][^>\n]*>", "", md_text)
 
     # 去除标题符号（#）
     md_text = re.sub(r"^#{1,6}\s*", "", md_text, flags=re.MULTILINE)
