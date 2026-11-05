@@ -8,6 +8,17 @@ from pydantic import BaseModel
 from .local_dit import VoxCPMLocDiT
 
 
+def require_positive_timesteps(n_timesteps: int) -> int:
+    """Reject a diffusion schedule that has no steps.
+
+    ``linspace(1, 0, 1)`` has a single point, so the Euler solver then indexes
+    ``t_span[1]`` and raises ``IndexError``.
+    """
+    if n_timesteps < 1:
+        raise ValueError(f"n_timesteps must be at least 1, got {n_timesteps}")
+    return n_timesteps
+
+
 class CfmConfig(BaseModel):
     sigma_min: float = 1e-6
     solver: str = "euler"
@@ -59,6 +70,7 @@ class UnifiedCFM(torch.nn.Module):
         sway_sampling_coef: float = 1.0,
         use_cfg_zero_star: bool = True,
     ):
+        n_timesteps = require_positive_timesteps(n_timesteps)
         b, _ = mu.shape
         t = patch_size
         z = torch.randn((b, self.in_channels, t), device=mu.device, dtype=mu.dtype) * temperature
