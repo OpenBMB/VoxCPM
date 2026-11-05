@@ -82,6 +82,9 @@ include = ["voxcpm*"]
 [tool.setuptools_scm]
 version_scheme = "post-release"
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [tool.black]
 line-length = 120
 target-version = ['py310']
