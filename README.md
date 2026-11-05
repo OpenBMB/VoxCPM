@@ -326,6 +326,8 @@ For on-device / edge deployment without Python, use **[llama.cpp-omni](https://g
 
 **1. Download GGUF weights** from [HuggingFace](https://huggingface.co/DennisHuang648/VoxCPM2-GGUF) | [ModelScope](https://modelscope.cn/models/DennisHuang/VoxCPM2-GGUF) — you need one **BaseLM** (F16 or Q8_0) + the **Acoustic** file. Q8_0 halves the download with negligible quality loss.
 
+> **Converting the PyTorch checkpoint?** `audiovae.pth` stores `decoder.sr_bin_boundaries` as int32, which can break downstream safetensors → GGUF conversion. Cast integer tensors to float32 before exporting; the sample-rate table is lossless in fp32. See [#416](https://github.com/OpenBMB/VoxCPM/issues/416) for a conversion snippet.
+
 **2. Build**
 
 ```bash
