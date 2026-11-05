@@ -153,3 +153,27 @@ def test_rejects_non_positive_worker_count(tmp_path):
 
     with pytest.raises(ValueError, match="num_proc must be at least 1"):
         load_audio_text_datasets(str(manifest), num_proc=0)
+
+
+def test_partial_dataset_id_nulls_are_filled_with_zero(tmp_path):
+    first_audio = tmp_path / "first.wav"
+    second_audio = tmp_path / "second.wav"
+    _write_wav(first_audio, 0.5)
+    _write_wav(second_audio, 0.5)
+
+    # One row carries a dataset_id, the other omits it. The omitted row keeps a null
+    # that must be filled with 0; otherwise it reaches collate_fn as None and crashes
+    # torch.tensor([...], dtype=torch.int32).
+    manifest = tmp_path / "train.jsonl"
+    _write_manifest(
+        manifest,
+        [
+            {"audio": str(first_audio), "text": "first", "dataset_id": 5},
+            {"audio": str(second_audio), "text": "second"},
+        ],
+    )
+
+    train_ds, _ = load_audio_text_datasets(train_manifest=str(manifest))
+
+    assert train_ds["dataset_id"] == [5, 0]
+    assert all(v is not None for v in train_ds["dataset_id"])

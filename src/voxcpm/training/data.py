@@ -179,8 +179,17 @@ def load_audio_text_datasets(
             if all(value is None for value in ds[dataset_id_column]):
                 ds = ds.remove_columns(dataset_id_column)
                 ds = ds.add_column(DEFAULT_ID_COLUMN, [0] * len(ds))
-            elif dataset_id_column != DEFAULT_ID_COLUMN:
-                ds = ds.rename_column(dataset_id_column, DEFAULT_ID_COLUMN)
+            else:
+                if dataset_id_column != DEFAULT_ID_COLUMN:
+                    ds = ds.rename_column(dataset_id_column, DEFAULT_ID_COLUMN)
+                # Rows that omit the id keep a null here (the feature is nullable). Fill
+                # those with the default 0 -- otherwise None survives to collate_fn's
+                # torch.tensor([...], dtype=torch.int32), which raises on NoneType. This
+                # mirrors the all-null branch above and the item.get(..., 0) default.
+                if any(value is None for value in ds[DEFAULT_ID_COLUMN]):
+                    filled = [0 if value is None else value for value in ds[DEFAULT_ID_COLUMN]]
+                    ds = ds.remove_columns(DEFAULT_ID_COLUMN)
+                    ds = ds.add_column(DEFAULT_ID_COLUMN, filled)
         else:
             ds = ds.add_column(DEFAULT_ID_COLUMN, [0] * len(ds))
         return ds
