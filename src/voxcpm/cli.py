@@ -20,6 +20,16 @@ DEFAULT_HF_MODEL_ID = "openbmb/VoxCPM2"
 # -----------------------------
 
 
+def _positive_int(value: str) -> int:
+    try:
+        number = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("must be a positive integer") from None
+    if number <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return number
+
+
 def validate_file_exists(file_path: str, file_type: str = "file") -> Path:
     path = Path(file_path)
     if not path.exists():
@@ -197,6 +207,8 @@ def load_model(args):
                 device=args.device,
                 lora_config=lora_config,
                 lora_weights_path=lora_weights_path,
+                attention_backend=getattr(args, "attention_backend", "auto"),
+                max_cache_length=getattr(args, "max_cache_length", None),
             )
             print("Model loaded (local).", file=sys.stderr)
             return model
@@ -216,6 +228,8 @@ def load_model(args):
             device=args.device,
             lora_config=lora_config,
             lora_weights_path=lora_weights_path,
+            attention_backend=getattr(args, "attention_backend", "auto"),
+            max_cache_length=getattr(args, "max_cache_length", None),
         )
         print("Model loaded (from_pretrained).", file=sys.stderr)
         return model
@@ -464,6 +478,18 @@ def _add_model_args(parser):
         "--no-optimize",
         action="store_true",
         help="Disable model optimization during loading",
+    )
+    parser.add_argument(
+        "--attention-backend",
+        choices=["auto", "cudnn", "math"],
+        default="auto",
+        help="LM decode attention backend (default: auto; cudnn requires CUDA)",
+    )
+    parser.add_argument(
+        "--max-cache-length",
+        type=_positive_int,
+        default=None,
+        help="KV-cache token capacity including text, reference, and generation (default: model config)",
     )
     parser.add_argument(
         "--zipenhancer-path",

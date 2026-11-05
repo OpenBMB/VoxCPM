@@ -144,6 +144,23 @@ wav = model.generate(
 sf.write("demo.wav", wav, model.tts_model.sample_rate)
 ```
 
+#### 推理运行时选项（按需启用）
+
+默认值 `attention_backend="auto"` 和 `max_cache_length=None` 保留现有的注意力后端选择，以及检查点 `config.max_length` 指定的缓存容量。以下示例为自回归 LM 解码选择 cuDNN 注意力，并使用较小的固定 KV 缓存：
+
+```python
+model = VoxCPM.from_pretrained(
+    "openbmb/VoxCPM2",
+    device="cuda",
+    attention_backend="cudnn",
+    max_cache_length=2048,
+)
+```
+
+这些参数同样适用于本地模型路径和 `VoxCPM(...)` 构造函数。后端可选 `auto`、`cudnn`、`math`；`cudnn` 仅支持 CUDA。**在 CUDA 上启用优化并显式选择后端时，需要 PyTorch ≥ 2.6**。默认路径仍支持 PyTorch ≥ 2.5；在较旧的受支持版本上显式选择后端时，请在 Python 中设置 `optimize=False`，或在 CLI 中传入 `--no-optimize`。显式后端不受支持时会报错，不会静默回退。预填充（prefill）和扩散模型的注意力路径保持不变。
+
+`max_cache_length` 必须为正整数，容量包含 **文本 + 参考音频 + 已生成内容的 token**，不是字数或音频采样点数。它仅调整 KV 缓存大小，不修改检查点，也不缩短请求的生成长度。组合序列超出容量时，推理会报错，而非截断语音。请根据完整工作负载选择容量；内存占用、速度和数值输出可能随后端及硬件而变化。
+
 #### 🎨 音色设计
 
 用自然语言描述创建全新音色，无需参考音频。**格式：** 在 `text` 开头用括号写入音色描述（如 `"(音色描述)要合成的文本。"`）：
@@ -258,9 +275,17 @@ voxcpm design \
   --timestamp-level char \
   --timestamp-language zh
 
+# 按需启用 CUDA LM 解码后端和 KV 缓存容量
+voxcpm design \
+  --text "欢迎使用 VoxCPM2。" \
+  --device cuda --attention-backend cudnn --max-cache-length 2048 \
+  --output out.wav
+
 # 帮助
 voxcpm --help
 ```
+
+`design`、`clone`、`batch` 子命令以及旧版根命令行均支持 `--attention-backend` 和 `--max-cache-length`。省略参数即可保留默认行为；容量和 PyTorch 版本要求见上文[推理运行时选项](#推理运行时选项按需启用)。
 
 ### Web Demo
 
@@ -272,9 +297,14 @@ python app.py --port 8808  # 然后在浏览器打开 http://localhost:8808
 
 ```bash
 python app.py --device auto
+
+# 启动时按需配置 CUDA 后端和缓存容量
+python app.py --device cuda --attention-backend cudnn --max-cache-length 2048
 ```
 
 支持的取值包括 `auto`、`cpu`、`mps`、`cuda` 和 `cuda:N`。在 Apple Silicon Mac 上，`auto` 会在可用时使用 MPS。
+
+运行时选项与 Python API 具有相同的默认值和限制。Web Demo 在 CUDA 上会启用优化，因此显式选择后端需要 PyTorch ≥ 2.6；在较旧的受支持版本上，请使用带 `--no-optimize` 的 CLI，或在 API 中设置 `optimize=False`。
 
 ### 🚢 生产部署（Nano-vLLM）
 

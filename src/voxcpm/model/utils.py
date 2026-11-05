@@ -14,6 +14,34 @@ _VALID_DTYPE_OVERRIDES = {
 }
 
 
+def validate_inference_options(
+    attention_backend: str,
+    max_cache_length: int | None,
+    device: str | torch.device | None = None,
+    optimize: bool = False,
+) -> None:
+    """Validate inference controls, optionally against a resolved runtime device."""
+    if attention_backend not in ("auto", "cudnn", "math"):
+        raise ValueError("attention_backend must be one of 'auto', 'cudnn', or 'math'")
+    if max_cache_length is not None and (
+        isinstance(max_cache_length, bool) or not isinstance(max_cache_length, int) or max_cache_length <= 0
+    ):
+        raise ValueError("max_cache_length must be a positive integer or None")
+    if device is None:
+        return
+
+    is_cuda = torch.device(device).type == "cuda"
+    if attention_backend == "cudnn" and not is_cuda:
+        raise ValueError("attention_backend='cudnn' requires a CUDA device")
+    if attention_backend != "auto" and optimize and is_cuda:
+        version = tuple(int(part) for part in torch.__version__.split(".")[:2])
+        if version < (2, 6):
+            raise ValueError(
+                "Explicit attention_backend with torch.compile requires PyTorch >= 2.6; "
+                "upgrade PyTorch, set optimize=False, or use attention_backend='auto'"
+            )
+
+
 # Ref: https://github.com/OpenBMB/VoxCPM/issues/256#issuecomment-4235252732
 # Explicitly close partially-consumed generators so inference_mode cleanup
 # does not get deferred to Python's GC/finalizer path.

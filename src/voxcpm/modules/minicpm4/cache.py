@@ -33,14 +33,23 @@ class StaticKVCache:
 
     def step(self) -> int:
         if self.current_length >= self.max_length:
-            raise ValueError("KV cache is full")
+            raise ValueError(
+                f"KV cache capacity ({self.max_length}) exhausted. "
+                "Increase max_cache_length or shorten the text/reference audio."
+            )
 
         ret = self.current_length
         self.current_length += 1
         return ret
 
     def fill_caches(self, kv_caches: List[Tuple[torch.Tensor, torch.Tensor]]):
-        self.current_length = kv_caches[0][0].size(2)
+        prefix_length = kv_caches[0][0].size(2)
+        if prefix_length > self.max_length:
+            raise ValueError(
+                f"Input prefix needs {prefix_length} KV-cache positions, but capacity is {self.max_length}. "
+                "Increase max_cache_length or shorten the text/reference audio."
+            )
+        self.current_length = prefix_length
         self.kv_cache.zero_()
         for i in range(self.num_layers):
             self.kv_cache[0, i, :, :, : self.current_length, :] = kv_caches[i][0]

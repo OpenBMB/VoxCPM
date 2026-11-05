@@ -53,6 +53,7 @@ from .utils import (
     next_and_close,
     pick_runtime_dtype,
     resolve_runtime_device,
+    validate_inference_options,
 )
 
 
@@ -162,6 +163,8 @@ class VoxCPM2Model(nn.Module):
         audio_vae: AudioVAEV2,
         lora_config: LoRAConfig = None,
         device: str | None = None,
+        attention_backend: str = "auto",
+        max_cache_length: int | None = None,
     ):
         super().__init__()
         self.config = config
@@ -169,6 +172,9 @@ class VoxCPM2Model(nn.Module):
         self.feat_dim = config.feat_dim
         self.patch_size = config.patch_size
         self.device = resolve_runtime_device(device, config.device)
+        validate_inference_options(attention_backend, max_cache_length, self.device)
+        self.attention_backend = attention_backend
+        self.max_cache_length = config.max_length if max_cache_length is None else max_cache_length
         self.config.device = self.device
         resolved_dtype = pick_runtime_dtype(self.device, self.config.dtype)
         if resolved_dtype != self.config.dtype:
@@ -180,8 +186,8 @@ class VoxCPM2Model(nn.Module):
         print(f"Running on device: {self.device}, dtype: {self.config.dtype}", file=sys.stderr)
 
         # Text-Semantic LM
-        self.base_lm = MiniCPMModel(config.lm_config)
-        self.base_lm.setup_cache(1, config.max_length, self.device, get_dtype(self.config.dtype))
+        self.base_lm = MiniCPMModel(config.lm_config, attention_backend=self.attention_backend)
+        self.base_lm.setup_cache(1, self.max_cache_length, self.device, get_dtype(self.config.dtype))
 
         self.text_tokenizer = mask_multichar_chinese_tokens(tokenizer)
         self.audio_start_token = 101
@@ -195,8 +201,8 @@ class VoxCPM2Model(nn.Module):
         residual_lm_config.num_hidden_layers = config.residual_lm_num_layers
         residual_lm_config.vocab_size = 0
         residual_lm_config.no_rope = config.residual_lm_no_rope
-        self.residual_lm = MiniCPMModel(residual_lm_config)
-        self.residual_lm.setup_cache(1, config.max_length, self.device, get_dtype(self.config.dtype))
+        self.residual_lm = MiniCPMModel(residual_lm_config, attention_backend=self.attention_backend)
+        self.residual_lm.setup_cache(1, self.max_cache_length, self.device, get_dtype(self.config.dtype))
 
         # Local Encoder
         encoder_config = config.lm_config.model_copy(deep=True)
@@ -279,8 +285,9 @@ class VoxCPM2Model(nn.Module):
     def optimize(self, disable: bool = False):
         if disable:
             return self
+        validate_inference_options(self.attention_backend, self.max_cache_length, self.device, optimize=True)
         try:
-            if self.device != "cuda":
+            if torch.device(self.device).type != "cuda":
                 raise ValueError("VoxCPMModel can only be optimized on CUDA device")
             try:
                 import triton  # noqa: F401
@@ -1138,9 +1145,16 @@ class VoxCPM2Model(nn.Module):
         training: bool = False,
         device: str | None = None,
         lora_config: LoRAConfig = None,
+        attention_backend: str = "auto",
+        max_cache_length: int | None = None,
     ):
+        validate_inference_options(attention_backend, max_cache_length)
         with open(os.path.join(path, "config.json"), "r", encoding="utf-8") as _cfg_f:
             config = VoxCPMConfig.model_validate_json(_cfg_f.read())
+        resolved_device = resolve_runtime_device(device, config.device)
+        validate_inference_options(
+            attention_backend, max_cache_length, resolved_device, optimize=optimize and not training
+        )
         tokenizer = LlamaTokenizerFast.from_pretrained(path)
         audio_vae_config = getattr(config, "audio_vae_config", None)
         audio_vae = AudioVAEV2(config=audio_vae_config) if audio_vae_config else AudioVAEV2()
@@ -1162,7 +1176,15 @@ class VoxCPM2Model(nn.Module):
             raise FileNotFoundError(
                 f"AudioVAE checkpoint not found. Expected either {audiovae_safetensors_path} or {audiovae_pth_path}"
             )
-        model = cls(config, tokenizer, audio_vae, lora_config, device=device)
+        model = cls(
+            config,
+            tokenizer,
+            audio_vae,
+            lora_config,
+            device=resolved_device,
+            attention_backend=attention_backend,
+            max_cache_length=max_cache_length,
+        )
         if not training:
             lm_dtype = get_dtype(model.config.dtype)
             model = model.to(lm_dtype)

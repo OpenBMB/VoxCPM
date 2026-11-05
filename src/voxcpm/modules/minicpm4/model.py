@@ -1,6 +1,7 @@
 from .config import MiniCPM4Config
 import torch
 import torch.nn as nn
+from torch.nn.attention import SDPBackend, sdpa_kernel
 from typing import List, Tuple
 import math
 from .cache import StaticKVCache
@@ -110,10 +111,13 @@ class MiniCPMLongRoPE(nn.Module):
 
 
 class MiniCPMAttention(nn.Module):
-    def __init__(self, config: MiniCPM4Config, layer_idx: int):
+    def __init__(self, config: MiniCPM4Config, layer_idx: int, attention_backend: str = "auto"):
         super().__init__()
         self.config = config
         self.layer_idx = layer_idx
+        if attention_backend not in ("auto", "cudnn", "math"):
+            raise ValueError(f"Unsupported attention_backend: {attention_backend!r}. Choose auto, cudnn, or math.")
+        self.attention_backend = attention_backend
         self.hidden_size = config.hidden_size
         self.num_heads = config.num_attention_heads
         self.head_dim = (
@@ -205,13 +209,26 @@ class MiniCPMAttention(nn.Module):
         query_states = query_states.contiguous()
         key_cache = key_cache.contiguous()
         value_cache = value_cache.contiguous()
-        attn_output = torch.nn.functional.scaled_dot_product_attention(
-            query_states,
-            key_cache,
-            value_cache,
-            attn_mask=attn_mask,
-            enable_gqa=True,
-        )
+        if self.attention_backend == "auto":
+            attn_output = torch.nn.functional.scaled_dot_product_attention(
+                query_states,
+                key_cache,
+                value_cache,
+                attn_mask=attn_mask,
+                enable_gqa=True,
+            )
+        else:
+            # Capture the explicit backend in the graph: an external context can
+            # reuse a previously compiled implementation from the compiler cache.
+            backend = SDPBackend.CUDNN_ATTENTION if self.attention_backend == "cudnn" else SDPBackend.MATH
+            with sdpa_kernel(backend):
+                attn_output = torch.nn.functional.scaled_dot_product_attention(
+                    query_states,
+                    key_cache,
+                    value_cache,
+                    attn_mask=attn_mask,
+                    enable_gqa=True,
+                )
 
         attn_output = attn_output.transpose(1, 2).contiguous()
         attn_output = attn_output.reshape(bsz, self.num_heads * self.head_dim)
@@ -236,10 +253,10 @@ class MiniCPMMLP(nn.Module):
 
 
 class MiniCPMDecoderLayer(nn.Module):
-    def __init__(self, config: MiniCPM4Config, layer_idx: int):
+    def __init__(self, config: MiniCPM4Config, layer_idx: int, attention_backend: str = "auto"):
         super().__init__()
         self.hidden_size = config.hidden_size
-        self.self_attn = MiniCPMAttention(config=config, layer_idx=layer_idx)
+        self.self_attn = MiniCPMAttention(config=config, layer_idx=layer_idx, attention_backend=attention_backend)
 
         self.mlp = MiniCPMMLP(config)
         self.input_layernorm = MiniCPMRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
@@ -330,7 +347,7 @@ class MiniCPMModel(nn.Module):
         config: MiniCPMConfig
     """
 
-    def __init__(self, config: MiniCPM4Config):
+    def __init__(self, config: MiniCPM4Config, attention_backend: str = "auto"):
         super().__init__()
         self.vocab_size = config.vocab_size
         self.config = config
@@ -341,7 +358,10 @@ class MiniCPMModel(nn.Module):
             self.embed_tokens = nn.Identity()
 
         self.layers = nn.ModuleList(
-            [MiniCPMDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
+            [
+                MiniCPMDecoderLayer(config, layer_idx, attention_backend=attention_backend)
+                for layer_idx in range(config.num_hidden_layers)
+            ]
         )
 
         self.norm = MiniCPMRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
