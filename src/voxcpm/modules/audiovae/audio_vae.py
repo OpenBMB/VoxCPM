@@ -17,6 +17,20 @@ def WNConvTranspose1d(*args, **kwargs):
     return weight_norm(nn.ConvTranspose1d(*args, **kwargs))
 
 
+def causal_trim_length(padding: int, output_padding: int = 0) -> int:
+    """Right-hand samples a causal transpose conv should drop.
+
+    ``tensor[..., :-0]`` is ``tensor[..., :0]`` and returns an empty waveform,
+    so a trim of zero has to stay a no-op at the call site.
+    """
+    trim = padding * 2 - output_padding
+    if trim < 0:
+        raise ValueError(
+            f"causal padding {padding} is smaller than output_padding {output_padding}"
+        )
+    return trim
+
+
 class CausalConv1d(nn.Conv1d):
     def __init__(self, *args, padding: int = 0, **kwargs):
         super().__init__(*args, **kwargs)
@@ -34,7 +48,11 @@ class CausalTransposeConv1d(nn.ConvTranspose1d):
         self.__output_padding = output_padding
 
     def forward(self, x):
-        return super().forward(x)[..., : -(self.__padding * 2 - self.__output_padding)]
+        hidden = super().forward(x)
+        trim = causal_trim_length(self.__padding, self.__output_padding)
+        if trim == 0:
+            return hidden
+        return hidden[..., :-trim]
 
 
 def WNCausalConv1d(*args, **kwargs):
