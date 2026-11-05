@@ -191,6 +191,19 @@ class AudioFeatureProcessingPacker:
             audio_task_ids_batch = torch.stack([pad_1d(t, pad_value=0) for t in audio_task_ids_list], dim=0)
             audio_dataset_ids_batch = torch.stack([pad_1d(d, pad_value=0) for d in audio_dataset_ids_list], dim=0)
 
+            # Samples longer than max_len are truncated by pad_1d/pad_3d above. The stop
+            # label lives near the end of each sequence (labels[-2] == 1), so truncation
+            # silently drops it -- the model is then trained to emit audio frames with no
+            # stop supervision for those samples. Re-assert the stop label at the last
+            # retained audio position so a truncated sample still carries exactly one stop
+            # target. (Loss is left to the sample's own loss_mask, so prompt-only audio,
+            # which carries no loss, is untouched.)
+            for i, length in enumerate(lengths):
+                if length > max_len:
+                    audio_positions = (audio_mask_batch[i] == 1).nonzero(as_tuple=True)[0]
+                    if audio_positions.numel() > 0:
+                        labels_batch[i, int(audio_positions[-1])] = 1
+
             # Position ids: [B, T], simple 0..L_i-1 then padded with 0
             position_ids_list = []
             for L in lengths:
