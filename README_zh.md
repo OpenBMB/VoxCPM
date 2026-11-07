@@ -1,7 +1,7 @@
 <h2 align="center">VoxCPM2：基于连续表征的多语言语音合成、创意音色设计与高保真声音克隆</h2>
 
 <p align="center">
-  <a href="./README.md">English</a> | <b>中文</b>
+  <a href="./README.md">English</a> | <b>中文</b> | <a href="./README_ja.md">日本語</a>
 </p>
 
 <p align="center">
