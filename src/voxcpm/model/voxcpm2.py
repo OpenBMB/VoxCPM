@@ -293,7 +293,7 @@ class VoxCPM2Model(nn.Module):
             if not compiler_available():
                 raise ValueError(
                     "no C compiler found for torch.compile "
-                    "(set CC or install cc/gcc/clang); falling back to eager mode"
+                    "(set CC or install cc/gcc/clang/cl/clang-cl); falling back to eager mode"
                 )
             self.base_lm.forward_step = torch.compile(self.base_lm.forward_step, mode="reduce-overhead", fullgraph=True)
             self.residual_lm.forward_step = torch.compile(
@@ -306,6 +306,10 @@ class VoxCPM2Model(nn.Module):
             )
         except Exception as e:
             print(f"Warning: torch.compile disabled - {e}", file=sys.stderr)
+            # Also emit a real warning so pytest.warns/caplog and user warning
+            # filters can observe the fallback; the stderr print is kept for
+            # visibility in plain CLI runs where warnings may be filtered.
+            warnings.warn(f"torch.compile disabled - {e}", RuntimeWarning, stacklevel=2)
         return self
 
     def forward(

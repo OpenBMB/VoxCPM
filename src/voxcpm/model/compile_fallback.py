@@ -1,7 +1,8 @@
 """Proactive toolchain detection for ``torch.compile`` fallbacks.
 
 ``torch.compile`` is lazy: it returns immediately and Triton only looks for a
-C compiler (``$CC`` / ``cc`` / ``gcc`` / ``clang``, or ``triton.knobs.build.impl``)
+C compiler (``$CC`` / ``cc`` / ``gcc`` / ``clang`` / ``cl`` / ``clang-cl``,
+or ``triton.knobs.build.impl``)
 when the compiled artifact is first built.  Wrapping the *construction* of the
 compiled callable in ``try/except`` therefore never catches a missing compiler
 and the failure surfaces as an ``InductorError`` during the first ``generate()``.
@@ -44,5 +45,6 @@ def compiler_available() -> bool:
     cc = os.environ.get("CC")
     if cc:
         candidates.append(cc.split()[0])
-    candidates.extend(["cc", "gcc", "clang"])
+    # POSIX names first, then the MSVC / clang-cl driver names used on Windows.
+    candidates.extend(["cc", "gcc", "clang", "cl", "clang-cl"])
     return any(shutil.which(c) for c in candidates)
