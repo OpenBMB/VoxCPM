@@ -239,6 +239,11 @@ voxcpm clone \
 # Batch processing
 voxcpm batch --input examples/input.txt --output-dir outs
 
+# Version and optional PyPI update check
+voxcpm version
+voxcpm version --check
+voxcpm version --check --json
+
 # Optional post-generation timestamps with stable-ts
 pip install "voxcpm[timestamps]"
 voxcpm design \
