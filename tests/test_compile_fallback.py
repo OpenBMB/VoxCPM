@@ -6,6 +6,8 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 MODULE_PATH = ROOT / "src" / "voxcpm" / "model" / "compile_fallback.py"
 
@@ -54,3 +56,45 @@ def test_missing_triton_import_is_tolerated(monkeypatch):
     monkeypatch.delenv("CC", raising=False)
     monkeypatch.setitem(sys.modules, "triton", None)  # import triton -> ImportError
     assert compile_fallback.compiler_available() is True
+
+
+@pytest.mark.parametrize("compiler_name", ["cc", "gcc", "clang", "cl", "clang-cl"])
+def test_each_compiler_name_is_probed_and_found(monkeypatch, compiler_name):
+    """Every supported driver name - POSIX and MSVC - is probed on PATH.
+
+    Regression guard for Windows: ``cl`` (MSVC) and ``clang-cl`` must be part
+    of the probe list, otherwise ``torch.compile`` would be silently disabled
+    on Windows machines that only have the MSVC toolchain installed.
+    """
+    probed = []
+
+    def fake_which(name):
+        probed.append(name)
+        return f"C:/toolchain/{name}.exe" if name == compiler_name else None
+
+    monkeypatch.setattr(compile_fallback.shutil, "which", fake_which)
+    monkeypatch.delenv("CC", raising=False)
+    monkeypatch.setitem(sys.modules, "triton", types.ModuleType("triton"))  # no knobs
+    assert compile_fallback.compiler_available() is True
+    assert compiler_name in probed, f"{compiler_name} was never probed via shutil.which"
+
+
+def test_msvc_toolchain_alone_satisfies_probe(monkeypatch):
+    """A Windows box with only MSVC drivers on PATH must still be detected.
+
+    POSIX names are probed first and come up empty; the probe then continues
+    into the MSVC names (``any`` may stop at the first hit, e.g. ``cl``, so we
+    only require that an MSVC name is what finally satisfies the probe).
+    """
+    probed = []
+
+    def fake_which_msvc_only(name):
+        probed.append(name)
+        return f"C:/toolchain/{name}.exe" if name in ("cl", "clang-cl") else None
+
+    monkeypatch.setattr(compile_fallback.shutil, "which", fake_which_msvc_only)
+    monkeypatch.delenv("CC", raising=False)
+    monkeypatch.setitem(sys.modules, "triton", types.ModuleType("triton"))
+    assert compile_fallback.compiler_available() is True
+    assert probed[:3] == ["cc", "gcc", "clang"]  # POSIX names probed and missed
+    assert probed[3] in ("cl", "clang-cl")  # an MSVC name satisfies the probe
