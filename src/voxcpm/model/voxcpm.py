@@ -44,6 +44,7 @@ from ..modules.layers.lora import apply_lora_to_named_linear_modules
 from ..modules.locdit import CfmConfig, UnifiedCFM, VoxCPMLocDiT
 from ..modules.locenc import VoxCPMLocEnc
 from ..modules.minicpm4 import MiniCPM4Config, MiniCPMModel
+from .compile_fallback import compiler_available
 from .utils import (
     apply_generation_seed,
     get_dtype,
@@ -236,6 +237,14 @@ class VoxCPMModel(nn.Module):
                 import triton  # noqa: F401
             except ImportError:
                 raise ValueError("triton is not installed")
+            # torch.compile 是惰性的：Triton 直到第一次真正编译才去找 C 编译器，
+            # 上面的 try/except 拦不住「没装编译器」这种失败（它会炸在第一次 generate()）。
+            # 提前探测工具链，缺失时直接走 eager 兜底。
+            if not compiler_available():
+                raise ValueError(
+                    "no C compiler found for torch.compile "
+                    "(set CC or install cc/gcc/clang/cl/clang-cl); falling back to eager mode"
+                )
             self.base_lm.forward_step = torch.compile(self.base_lm.forward_step, mode="reduce-overhead", fullgraph=True)
             self.residual_lm.forward_step = torch.compile(
                 self.residual_lm.forward_step, mode="reduce-overhead", fullgraph=True
@@ -247,6 +256,10 @@ class VoxCPMModel(nn.Module):
             )
         except Exception as e:
             print(f"Warning: torch.compile disabled - {e}", file=sys.stderr)
+            # Also emit a real warning so pytest.warns/caplog and user warning
+            # filters can observe the fallback; the stderr print is kept for
+            # visibility in plain CLI runs where warnings may be filtered.
+            warnings.warn(f"torch.compile disabled - {e}", RuntimeWarning, stacklevel=2)
         return self
 
     def forward(
