@@ -48,6 +48,7 @@ from ..modules.minicpm4 import MiniCPM4Config, MiniCPMModel
 from .utils import (
     apply_generation_seed,
     get_dtype,
+    load_audio_file,
     materialize_generation_seed,
     mask_multichar_chinese_tokens,
     next_and_close,
@@ -414,8 +415,7 @@ class VoxCPM2Model(nn.Module):
         Returns:
             audio_feat: (T, P, D) tensor of latent patches.
         """
-        audio, _ = librosa.load(wav_path, sr=self._encode_sample_rate, mono=True)
-        audio = torch.from_numpy(audio).unsqueeze(0)
+        audio = load_audio_file(wav_path, target_sr=self._encode_sample_rate).unsqueeze(0)
         if trim_silence_vad:
             audio = _trim_audio_silence_vad(audio, self._encode_sample_rate, max_silence_ms=200.0)
         patch_len = self.patch_size * self.chunk_size

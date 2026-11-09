@@ -240,3 +240,43 @@ def resolve_runtime_device(device: Optional[str], configured_device: str = "cuda
         f"Unsupported device '{device}'. Supported values are 'auto', 'cpu', 'mps', "
         "'cuda', or indexed CUDA devices like 'cuda:0'."
     )
+
+
+def load_audio_file(file_path: str, target_sr: int = 16000) -> torch.Tensor:
+    """Load any audio file (WAV, MP3, M4A, AAC, FLAC, OGG, WEBM, etc.) and return a mono 1D float32 tensor."""
+    # Try librosa / soundfile first
+    try:
+        import librosa
+        audio, _ = librosa.load(file_path, sr=target_sr, mono=True)
+        return torch.from_numpy(audio.astype(torch.float32.numpy_dtype() if hasattr(torch.float32, 'numpy_dtype') else "float32"))
+    except Exception:
+        pass
+
+    # Fallback to ffmpeg stream conversion
+    try:
+        import io
+        import subprocess
+        import soundfile as sf
+
+        try:
+            import imageio_ffmpeg
+            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        except ImportError:
+            ffmpeg_exe = "ffmpeg"
+
+        cmd = [
+            ffmpeg_exe,
+            "-nostdin",
+            "-threads", "0",
+            "-i", str(file_path),
+            "-f", "wav",
+            "-ar", str(target_sr),
+            "-ac", "1",
+            "pipe:1",
+        ]
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        audio_np, _ = sf.read(io.BytesIO(proc.stdout), dtype="float32")
+        return torch.from_numpy(audio_np)
+    except Exception as e:
+        raise RuntimeError(f"Failed to load audio file '{file_path}': {e}") from e
+
