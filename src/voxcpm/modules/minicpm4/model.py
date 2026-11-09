@@ -173,10 +173,18 @@ class MiniCPMAttention(nn.Module):
     def forward_step(
         self,
         hidden_states: torch.Tensor,
-        position_emb: Tuple[torch.Tensor, torch.Tensor],
-        position_id: int,
+        position_emb: Tuple[torch.Tensor, torch.Tensor] | None,
+        position_id: torch.Tensor | int,
         kv_cache: Tuple[torch.Tensor, torch.Tensor],
     ) -> torch.Tensor:
+        """
+        Args:
+            hidden_states: Tensor(batch_size, hidden_size)
+            position_emb: Tuple(cos, sin) with shape (batch_size, head_dim) for per-batch positions,
+                          or (seq_len, head_dim) for shared positions, or None
+            position_id: Tensor(batch_size) or int - position index for each batch item
+            kv_cache: Tuple(key_cache, value_cache)
+        """
         bsz, _ = hidden_states.size()
 
         query_states = self.q_proj(hidden_states)
@@ -187,18 +195,40 @@ class MiniCPMAttention(nn.Module):
         key_states = key_states.view(bsz, 1, self.num_key_value_heads, self.head_dim).transpose(1, 2)
         value_states = value_states.view(bsz, 1, self.num_key_value_heads, self.head_dim).transpose(1, 2)
 
+        # Apply rotary embeddings if provided
         if position_emb is not None:
             cos, sin = position_emb
+            # cos/sin shape: (batch_size, head_dim) for per-batch, or (seq_len, head_dim) for shared
+            if cos.dim() == 2 and cos.size(0) == bsz:
+                # Per-batch positions: reshape for broadcasting with [bsz, num_heads, 1, head_dim]
+                cos = cos.view(bsz, 1, 1, self.head_dim)
+                sin = sin.view(bsz, 1, 1, self.head_dim)
+            elif cos.dim() == 2:
+                # Shared positions: (seq_len, head_dim) -> (1, 1, seq_len, head_dim) for broadcasting
+                cos = cos.view(1, 1, cos.size(0), self.head_dim)
+                sin = sin.view(1, 1, sin.size(0), self.head_dim)
             query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
         key_cache, value_cache = kv_cache
 
-        key_cache[:, :, position_id, :] = key_states
-        value_cache[:, :, position_id, :] = value_states
-
-        # Use an explicit broadcastable mask shape for SDPA. A 1D mask can
-        # trigger a CPU-side dimension bug in some PyTorch versions.
-        attn_mask = (torch.arange(key_cache.size(2), device=key_cache.device) <= position_id).view(1, 1, 1, -1)
+        # Handle both scalar position_id (legacy) and per-batch position_id tensor
+        if isinstance(position_id, torch.Tensor) and position_id.numel() == bsz:
+            # Per-batch positions: write each batch item at its own position
+            for b in range(bsz):
+                pos = position_id[b].item()
+                # key_states[b] has shape [num_kv_heads, 1, head_dim], squeeze to [num_kv_heads, head_dim]
+                key_cache[b, :, pos, :] = key_states[b].squeeze(1)
+                value_cache[b, :, pos, :] = value_states[b].squeeze(1)
+            # Create causal mask for the maximum position
+            max_pos = position_id.max().item()
+            attn_mask = (torch.arange(key_cache.size(2), device=key_cache.device) <= max_pos).view(1, 1, 1, -1)
+        else:
+            # Single position for all batches (legacy behavior)
+            pos = position_id.item() if isinstance(position_id, torch.Tensor) else position_id
+            # key_states has shape [bsz, num_kv_heads, 1, head_dim], need to squeeze dim 2
+            key_cache[:, :, pos, :] = key_states.squeeze(2)
+            value_cache[:, :, pos, :] = value_states.squeeze(2)
+            attn_mask = (torch.arange(key_cache.size(2), device=key_cache.device) <= pos).view(1, 1, 1, -1)
 
         # ref: https://github.com/pytorch/pytorch/issues/163597
         # there is a bug in MPS for non-contiguous tensors, so we need to make them contiguous
@@ -393,6 +423,7 @@ class MiniCPMModel(nn.Module):
         """
         Args:
             inputs_embeds: Tensor(batch_size, hidden_size)
+            position_id: Tensor(batch_size) - position index for each batch item
         Returns:
             hidden_states: Tensor(batch_size, hidden_size)
         """

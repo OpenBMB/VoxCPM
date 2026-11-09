@@ -51,6 +51,7 @@ class VoxCPM:
         device: str | None = None,
         lora_config: Optional[LoRAConfig] = None,
         lora_weights_path: Optional[str] = None,
+        batch_size: int = 1,
     ):
         """Initialize VoxCPM TTS pipeline.
 
@@ -69,6 +70,10 @@ class VoxCPM:
                 provided without lora_config, a default config will be created.
             lora_weights_path: Path to pre-trained LoRA weights (.pth file or directory
                 containing lora_weights.ckpt). If provided, LoRA weights will be loaded.
+            batch_size: Maximum number of concurrent sequences to process.
+                Increasing this allows handling multiple simultaneous TTS requests
+                (e.g., when using with vLLM-Omni or other concurrent serving frameworks).
+                Default is 1 for single-request processing. Higher values require more GPU memory.
         """
         print(
             f"voxcpm_model_path: {voxcpm_model_path}, zipenhancer_model_path: {zipenhancer_model_path}, enable_denoiser: {enable_denoiser}",
@@ -99,6 +104,7 @@ class VoxCPM:
                 optimize=optimize,
                 device=device,
                 lora_config=lora_config,
+                batch_size=batch_size,
             )
             print("Loaded VoxCPM2Model", file=sys.stderr)
         elif arch == "voxcpm":
@@ -107,6 +113,7 @@ class VoxCPM:
                 optimize=optimize,
                 device=device,
                 lora_config=lora_config,
+                batch_size=batch_size,
             )
             print("Loaded VoxCPMModel", file=sys.stderr)
         else:
@@ -145,6 +152,7 @@ class VoxCPM:
         device: str | None = None,
         lora_config: Optional[LoRAConfig] = None,
         lora_weights_path: Optional[str] = None,
+        batch_size: int = 1,
         **kwargs,
     ):
         """Instantiate ``VoxCPM`` from a Hugging Face Hub snapshot.
@@ -167,6 +175,10 @@ class VoxCPM:
             lora_weights_path: Path to pre-trained LoRA weights (.pth file or directory
                 containing lora_weights.ckpt). If provided, LoRA weights will be loaded
                 after model initialization.
+            batch_size: Maximum number of concurrent sequences to process.
+                Increasing this allows handling multiple simultaneous TTS requests
+                (e.g., when using with vLLM-Omni or other concurrent serving frameworks).
+                Default is 1 for single-request processing. Higher values require more GPU memory.
         Kwargs:
             Additional keyword arguments passed to the ``VoxCPM`` constructor.
 
