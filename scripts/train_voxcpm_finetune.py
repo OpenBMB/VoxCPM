@@ -7,15 +7,14 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root / "src"))
 
 import contextlib
-from typing import Dict
+import os
+import signal
 
 import argbind
 import torch
 from tensorboardX import SummaryWriter
 from torch.optim import AdamW
 from transformers import get_cosine_schedule_with_warmup
-import signal
-import os
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -30,7 +29,7 @@ except ImportError:
 import json
 
 from voxcpm.core import resolve_model_path
-from voxcpm.model import VoxCPMModel, VoxCPM2Model
+from voxcpm.model import VoxCPM2Model, VoxCPMModel
 from voxcpm.model.voxcpm import LoRAConfig as LoRAConfigV1
 from voxcpm.model.voxcpm2 import LoRAConfig as LoRAConfigV2
 from voxcpm.training import (
@@ -64,7 +63,7 @@ def train(
     max_batch_tokens: int = 0,
     save_path: str = "checkpoints",
     tensorboard: str = "",
-    lambdas: Dict[str, float] = {"loss/diff": 1.0, "loss/stop": 1.0},
+    lambdas: dict[str, float] = {"loss/diff": 1.0, "loss/stop": 1.0},
     lora: dict = None,
     config_path: str = "",
     max_grad_norm: float = 0.0,  # gradient clipping; 0 = disabled (backward compat)
@@ -406,8 +405,9 @@ def validate(
     valid_interval=1000,
 ):
     """Validate and generate sample audio"""
-    import numpy as np  # noqa: F401
     from collections import defaultdict
+
+    import numpy as np  # noqa: F401
 
     model.eval()
     total_losses = []
@@ -474,8 +474,8 @@ def validate(
             )
         except Exception as e:
             tracker.print(f"[Warning] Failed to generate sample audio: {e}")
-            import traceback
             import io
+            import traceback
 
             buf = io.StringIO()
             traceback.print_exc(file=buf)
@@ -497,8 +497,8 @@ def validate(
 
 def compute_mel_spectrogram(audio_np, sample_rate, n_mels=128):
     """Compute Mel Spectrogram (dB) using librosa"""
-    import numpy as np
     import librosa
+    import numpy as np
 
     audio_np = audio_np.flatten().astype(np.float32)
     mel = librosa.feature.melspectrogram(y=audio_np, sr=sample_rate, n_mels=n_mels, fmax=sample_rate // 2)
@@ -512,8 +512,8 @@ def create_mel_figure(gen_audio_np, gen_mel, sample_rate, step=None, ref_audio_n
     import matplotlib
 
     matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
     import librosa.display
+    import matplotlib.pyplot as plt
 
     fmax = sample_rate // 2
     step_str = f" @ Step {step}" if step is not None else ""
@@ -623,11 +623,10 @@ def generate_sample_audio(
                 if torch.cuda.is_available()
                 else contextlib.nullcontext()
             )
-            with torch.no_grad():
-                with autocast_ctx:
-                    generated = unwrapped_model.generate(
-                        target_text=text, inference_timesteps=10, cfg_value=2.0, seed=42
-                    )
+            with torch.no_grad(), autocast_ctx:
+                generated = unwrapped_model.generate(
+                    target_text=text, inference_timesteps=10, cfg_value=2.0, seed=42
+                )
 
             # Restore training setup
             # unwrapped_model.to(torch.float32)

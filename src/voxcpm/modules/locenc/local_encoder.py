@@ -1,7 +1,8 @@
 import torch
-import torch.nn as nn
-from ..minicpm4 import MiniCPMModel, MiniCPM4Config
 from einops import rearrange
+from torch import nn
+
+from ..minicpm4 import MiniCPM4Config, MiniCPMModel
 
 
 class VoxCPMLocEnc(nn.Module):

@@ -1,14 +1,14 @@
-import os
-import sys
-import json
-import yaml
 import datetime
+import json
+import os
 import subprocess
+import sys
 import threading
+from pathlib import Path
+
 import gradio as gr
 import torch
-from pathlib import Path
-from typing import Optional
+import yaml
 
 # Add src to sys.path
 project_root = Path(__file__).parent
@@ -19,18 +19,18 @@ _v2_path = project_root / "models" / "openbmb__VoxCPM2"
 _v15_path = project_root / "models" / "openbmb__VoxCPM1.5"
 default_pretrained_path = str(_v2_path) if _v2_path.exists() else (str(_v15_path) if _v15_path.exists() else "openbmb/VoxCPM2")
 
-from voxcpm.core import VoxCPM, resolve_model_path
-from voxcpm.model.voxcpm import LoRAConfig
 import numpy as np
 from funasr import AutoModel
 
 # --- Localization ---
-from i18n import STRINGS, DEFAULT_LANG, t
+from i18n import DEFAULT_LANG, STRINGS, t
+from voxcpm.core import VoxCPM, resolve_model_path
+from voxcpm.model.voxcpm import LoRAConfig
 
 # Global variables
-current_model: Optional[VoxCPM] = None
-asr_model: Optional[AutoModel] = None
-training_process: Optional[subprocess.Popen] = None
+current_model: VoxCPM | None = None
+asr_model: AutoModel | None = None
+training_process: subprocess.Popen | None = None
 training_log = ""
 
 
@@ -38,7 +38,7 @@ def get_timestamp_str():
     return datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
-def detect_sample_rate(pretrained_path: str) -> Optional[int]:
+def detect_sample_rate(pretrained_path: str) -> int | None:
     """Read audio_vae_config.sample_rate from the model's config.json.
 
     This is the AudioVAE *encoder* input rate, which is the correct rate for
@@ -225,7 +225,7 @@ def run_inference(text, prompt_wav, prompt_text, lora_selection, cfg_scale, step
             if lora_to_load:
                 print(f"Model loaded with LoRA: {lora_selection}", file=sys.stderr)
         except Exception as e:
-            error_msg = f"Failed to load model from {base_model_path}: {str(e)}"
+            error_msg = f"Failed to load model from {base_model_path}: {e!s}"
             print(error_msg, file=sys.stderr)
             return None, error_msg
         lora_just_loaded = lora_to_load
@@ -306,7 +306,7 @@ def run_inference(text, prompt_wav, prompt_text, lora_selection, cfg_scale, step
         import traceback
 
         traceback.print_exc()
-        return None, f"Error: {str(e)}"
+        return None, f"Error: {e!s}"
 
 
 def start_training(

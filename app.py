@@ -1,13 +1,13 @@
+import logging
 import os
+import random
 import re
 import sys
-import logging
-import random
-import numpy as np
-import gradio as gr
-from typing import Optional, Tuple
-from funasr import AutoModel
 from pathlib import Path
+
+import gradio as gr
+import numpy as np
+from funasr import AutoModel
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -232,9 +232,9 @@ class VoxCPMDemo:
 
         self.asr_model_id = "iic/SenseVoiceSmall"
         self.asr_device = "cuda:0" if self.device.startswith("cuda") else "cpu"
-        self.asr_model: Optional[AutoModel] = None
+        self.asr_model: AutoModel | None = None
 
-        self.voxcpm_model: Optional[voxcpm.VoxCPM] = None
+        self.voxcpm_model: voxcpm.VoxCPM | None = None
         self._model_id = model_id
 
     def get_or_load_voxcpm(self) -> voxcpm.VoxCPM:
@@ -262,7 +262,7 @@ class VoxCPMDemo:
         logger.info("ASR model loaded successfully.")
         return self.asr_model
 
-    def prompt_wav_recognition(self, prompt_wav: Optional[str]) -> str:
+    def prompt_wav_recognition(self, prompt_wav: str | None) -> str:
         if prompt_wav is None:
             return ""
         res = self.get_or_load_asr_model().generate(
@@ -276,13 +276,13 @@ class VoxCPMDemo:
         self,
         *,
         final_text: str,
-        audio_path: Optional[str],
-        prompt_text_clean: Optional[str],
+        audio_path: str | None,
+        prompt_text_clean: str | None,
         cfg_value_input: float,
         do_normalize: bool,
         denoise: bool,
         inference_timesteps: int = 10,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ) -> dict:
         generate_kwargs = dict(
             text=final_text,
@@ -302,14 +302,14 @@ class VoxCPMDemo:
         self,
         text_input: str,
         control_instruction: str = "",
-        reference_wav_path_input: Optional[str] = None,
+        reference_wav_path_input: str | None = None,
         prompt_text: str = "",
         cfg_value_input: float = 2.0,
         do_normalize: bool = True,
         denoise: bool = True,
         inference_timesteps: int = 10,
-        seed: Optional[int] = None,
-    ) -> Tuple[int, np.ndarray, Optional[int]]:
+        seed: int | None = None,
+    ) -> tuple[int, np.ndarray, int | None]:
         current_model = self.get_or_load_voxcpm()
 
         text = (text_input or "").strip()
@@ -326,9 +326,9 @@ class VoxCPMDemo:
         prompt_text_clean = (prompt_text or "").strip() or None
 
         if audio_path and prompt_text_clean:
-            logger.info(f"[Voice Cloning] prompt_wav + prompt_text + reference_wav")
+            logger.info("[Voice Cloning] prompt_wav + prompt_text + reference_wav")
         elif audio_path:
-            logger.info(f"[Voice Control] reference_wav only")
+            logger.info("[Voice Control] reference_wav only")
         else:
             logger.info(f"[Voice Design] control: {control[:50] if control else 'None'}...")
 
@@ -354,7 +354,7 @@ class VoxCPMDemo:
 def create_demo_interface(demo: VoxCPMDemo):
     gr.set_static_paths(paths=[Path.cwd().absolute() / "assets"])
 
-    def _coerce_seed(seed_value) -> Optional[int]:
+    def _coerce_seed(seed_value) -> int | None:
         if seed_value is None or seed_value == "":
             return None
         return int(seed_value)
@@ -370,7 +370,7 @@ def create_demo_interface(demo: VoxCPMDemo):
     def _generate(
         text: str,
         control_instruction: str,
-        ref_wav: Optional[str],
+        ref_wav: str | None,
         use_prompt_text: bool,
         prompt_text_value: str,
         cfg_value: float,

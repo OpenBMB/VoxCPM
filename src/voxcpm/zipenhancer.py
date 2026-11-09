@@ -7,7 +7,7 @@ Related dependencies are imported only when denoising functionality is needed.
 
 import os
 import tempfile
-from typing import Optional
+
 import torchaudio
 from modelscope.pipelines import pipeline
 from modelscope.utils.constant import Tasks
@@ -37,7 +37,7 @@ class ZipEnhancer:
         normalized_audio = torchaudio.functional.gain(audio, -20 - loudness)
         torchaudio.save(wav_path, normalized_audio, sr)
 
-    def enhance(self, input_path: str, output_path: Optional[str] = None, normalize_loudness: bool = True) -> str:
+    def enhance(self, input_path: str, output_path: str | None = None, normalize_loudness: bool = True) -> str:
         """
         Audio denoising enhancement
         Args:

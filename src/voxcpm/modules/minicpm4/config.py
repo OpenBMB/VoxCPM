@@ -1,11 +1,11 @@
+
 from pydantic import BaseModel
-from typing import List
 
 
 class RopeScalingConfig(BaseModel):
     type: str
-    long_factor: List[float]
-    short_factor: List[float]
+    long_factor: list[float]
+    short_factor: list[float]
     original_max_position_embeddings: int
 
 

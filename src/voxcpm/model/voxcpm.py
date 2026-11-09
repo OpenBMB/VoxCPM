@@ -20,14 +20,14 @@ limitations under the License.
 
 import os
 import sys
-from typing import Tuple, Union, Generator, List, Optional
+import warnings
+from collections.abc import Generator
 
 import torch
-import torch.nn as nn
 import torchaudio
-import warnings
 from einops import rearrange
 from pydantic import BaseModel
+from torch import nn
 
 try:
     from safetensors.torch import load_file
@@ -47,8 +47,8 @@ from ..modules.minicpm4 import MiniCPM4Config, MiniCPMModel
 from .utils import (
     apply_generation_seed,
     get_dtype,
-    materialize_generation_seed,
     mask_multichar_chinese_tokens,
+    materialize_generation_seed,
     next_and_close,
     pick_runtime_dtype,
     resolve_runtime_device,
@@ -83,7 +83,7 @@ class VoxCPMConfig(BaseModel):
 
     encoder_config: VoxCPMEncoderConfig
     dit_config: VoxCPMDitConfig
-    audio_vae_config: Optional[AudioVAEConfig] = None
+    audio_vae_config: AudioVAEConfig | None = None
 
     max_length: int = 4096
     device: str = "cuda"
@@ -370,7 +370,7 @@ class VoxCPMModel(nn.Module):
         retry_badcase_max_times: int = 3,
         retry_badcase_ratio_threshold: float = 6.0,  # setting acceptable ratio of audio length to text length (for badcase detection)
         streaming: bool = False,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ) -> Generator[torch.Tensor, None, None]:
         if retry_badcase and streaming:
             warnings.warn("Retry on bad cases is not supported in streaming mode, setting retry_badcase=False.")
@@ -593,12 +593,12 @@ class VoxCPMModel(nn.Module):
 
         return merged_cache
 
-    def generate_with_prompt_cache(self, *args, **kwargs) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def generate_with_prompt_cache(self, *args, **kwargs) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         return next_and_close(self._generate_with_prompt_cache(*args, streaming=False, **kwargs))
 
     def generate_with_prompt_cache_streaming(
         self, *args, **kwargs
-    ) -> Generator[Tuple[torch.Tensor, torch.Tensor, List[torch.Tensor]], None, None]:
+    ) -> Generator[tuple[torch.Tensor, torch.Tensor, list[torch.Tensor]], None, None]:
         return self._generate_with_prompt_cache(*args, streaming=True, **kwargs)
 
     @torch.inference_mode()
@@ -615,8 +615,8 @@ class VoxCPMModel(nn.Module):
         retry_badcase_ratio_threshold: float = 6.0,
         streaming: bool = False,
         streaming_prefix_len: int = 3,
-        seed: Optional[int] = None,
-    ) -> Generator[Tuple[torch.Tensor, torch.Tensor, Union[torch.Tensor, List[torch.Tensor]]], None, None]:
+        seed: int | None = None,
+    ) -> Generator[tuple[torch.Tensor, torch.Tensor, torch.Tensor | list[torch.Tensor]], None, None]:
         """
         Generate audio using pre-built prompt cache.
 
@@ -744,10 +744,10 @@ class VoxCPMModel(nn.Module):
                 decode_audio = decode_audio[..., :].squeeze(1).cpu()
             yield (decode_audio, target_text_token, pred_audio_feat)
 
-    def inference(self, *args, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
+    def inference(self, *args, **kwargs) -> tuple[torch.Tensor, torch.Tensor]:
         return next_and_close(self._inference(*args, streaming=False, **kwargs))
 
-    def inference_streaming(self, *args, **kwargs) -> Generator[Tuple[torch.Tensor, List[torch.Tensor]], None, None]:
+    def inference_streaming(self, *args, **kwargs) -> Generator[tuple[torch.Tensor, list[torch.Tensor]], None, None]:
         return self._inference(*args, streaming=True, **kwargs)
 
     @torch.inference_mode()
@@ -763,7 +763,7 @@ class VoxCPMModel(nn.Module):
         cfg_value: float = 2.0,
         streaming: bool = False,
         streaming_prefix_len: int = 3,
-    ) -> Generator[Tuple[torch.Tensor, Union[torch.Tensor, List[torch.Tensor]]], None, None]:
+    ) -> Generator[tuple[torch.Tensor, torch.Tensor | list[torch.Tensor]], None, None]:
         """Core inference method for audio generation.
 
         This is the main inference loop that generates audio features

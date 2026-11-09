@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Any
+
 import argbind
 import yaml
-from pathlib import Path
-from typing import Dict, Any
 
 
-def load_yaml_config(path: str | Path) -> Dict[str, Any]:
+def load_yaml_config(path: str | Path) -> dict[str, Any]:
     """
     Load a YAML configuration file into a dictionary suitable for argbind.
     """

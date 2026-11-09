@@ -1,8 +1,7 @@
-from typing import Dict, List, Optional
 
 import torch
-import torch.nn as nn
 from einops import rearrange
+from torch import nn
 
 
 class AudioFeatureProcessingPacker:
@@ -76,9 +75,9 @@ class AudioFeatureProcessingPacker:
         text_tokens: torch.Tensor,
         task_ids: torch.Tensor,
         dataset_ids: torch.Tensor,
-        is_prompts: List[bool],
-        ref_audio_tokens: Optional[torch.Tensor] = None,
-    ) -> Dict[str, torch.Tensor]:
+        is_prompts: list[bool],
+        ref_audio_tokens: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
         """
         Padding-based batching: each sample in the input batch is processed
         independently and then padded to a common length (capped by ``max_len``).
@@ -92,15 +91,15 @@ class AudioFeatureProcessingPacker:
         max_dataset_id = int(dataset_ids.max().item()) if dataset_ids.numel() > 0 else -1
         dataset_cnt = max(self.dataset_cnt, max_dataset_id + 1)
 
-        text_tokens_list: List[torch.Tensor] = []
-        audio_feats_list: List[torch.Tensor] = []
-        text_mask_list: List[torch.Tensor] = []
-        audio_mask_list: List[torch.Tensor] = []
-        loss_mask_list: List[torch.Tensor] = []
-        labels_list: List[torch.Tensor] = []
-        audio_task_ids_list: List[torch.Tensor] = []
-        audio_dataset_ids_list: List[torch.Tensor] = []
-        lengths: List[int] = []
+        text_tokens_list: list[torch.Tensor] = []
+        audio_feats_list: list[torch.Tensor] = []
+        text_mask_list: list[torch.Tensor] = []
+        audio_mask_list: list[torch.Tensor] = []
+        loss_mask_list: list[torch.Tensor] = []
+        labels_list: list[torch.Tensor] = []
+        audio_task_ids_list: list[torch.Tensor] = []
+        audio_dataset_ids_list: list[torch.Tensor] = []
+        lengths: list[int] = []
 
         audio_duration_consumed = torch.zeros(dataset_cnt, dtype=torch.float32, device=device)
         text_token_consumed = torch.zeros(dataset_cnt, dtype=torch.float32, device=device)

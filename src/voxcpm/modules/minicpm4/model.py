@@ -1,9 +1,10 @@
-from .config import MiniCPM4Config
-import torch
-import torch.nn as nn
-from typing import List, Tuple
 import math
+
+import torch
+from torch import nn
+
 from .cache import StaticKVCache
+from .config import MiniCPM4Config
 
 
 def rms_layernorm(hidden: torch.Tensor, weight: torch.Tensor, eps: float):
@@ -96,7 +97,7 @@ class MiniCPMLongRoPE(nn.Module):
         self.cos_cached = emb.cos().to(dtype) * self.scaling_factor
         self.sin_cached = emb.sin().to(dtype) * self.scaling_factor
 
-    def forward(self, position_ids: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, position_ids: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             position_ids: Tensor(seq_len) 或 Tensor(batch_size, seq_len)
@@ -132,9 +133,9 @@ class MiniCPMAttention(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        position_emb: Tuple[torch.Tensor, torch.Tensor],
+        position_emb: tuple[torch.Tensor, torch.Tensor],
         is_causal: bool,
-    ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
         bsz, q_len, _ = hidden_states.size()
 
         query_states = self.q_proj(hidden_states)
@@ -173,9 +174,9 @@ class MiniCPMAttention(nn.Module):
     def forward_step(
         self,
         hidden_states: torch.Tensor,
-        position_emb: Tuple[torch.Tensor, torch.Tensor],
+        position_emb: tuple[torch.Tensor, torch.Tensor],
         position_id: int,
-        kv_cache: Tuple[torch.Tensor, torch.Tensor],
+        kv_cache: tuple[torch.Tensor, torch.Tensor],
     ) -> torch.Tensor:
         bsz, _ = hidden_states.size()
 
@@ -252,9 +253,9 @@ class MiniCPMDecoderLayer(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        position_emb: Tuple[torch.Tensor, torch.Tensor],
+        position_emb: tuple[torch.Tensor, torch.Tensor],
         is_causal: bool,
-    ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
         """
         Args:
             hidden_states (`torch.FloatTensor`): input to the layer of shape `(batch, seq_len, embed_dim)`
@@ -290,9 +291,9 @@ class MiniCPMDecoderLayer(nn.Module):
     def forward_step(
         self,
         hidden_states: torch.Tensor,
-        position_emb: Tuple[torch.Tensor, torch.Tensor],
+        position_emb: tuple[torch.Tensor, torch.Tensor],
         position_id: torch.Tensor,
-        kv_cache: Tuple[torch.Tensor, torch.Tensor],
+        kv_cache: tuple[torch.Tensor, torch.Tensor],
     ) -> torch.Tensor:
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
@@ -356,7 +357,7 @@ class MiniCPMModel(nn.Module):
         self,
         inputs_embeds: torch.Tensor,
         is_causal: bool = True,
-    ) -> Tuple[torch.Tensor, List[Tuple[torch.Tensor, torch.Tensor]]]:
+    ) -> tuple[torch.Tensor, list[tuple[torch.Tensor, torch.Tensor]]]:
         """
         Args:
             inputs_embeds: Tensor(batch_size, seq_length, hidden_size)

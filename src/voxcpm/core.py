@@ -1,14 +1,16 @@
-import os
-import sys
-import re
 import json
+import os
+import re
+import sys
 import tempfile
+from collections.abc import Generator
+
 import numpy as np
-from typing import Generator, Optional
 from huggingface_hub import snapshot_download
-from .model.voxcpm import VoxCPMModel, LoRAConfig
-from .model.voxcpm2 import VoxCPM2Model
+
 from .model.utils import next_and_close
+from .model.voxcpm import LoRAConfig, VoxCPMModel
+from .model.voxcpm2 import VoxCPM2Model
 
 
 def resolve_model_path(
@@ -49,8 +51,8 @@ class VoxCPM:
         enable_denoiser: bool = True,
         optimize: bool = True,
         device: str | None = None,
-        lora_config: Optional[LoRAConfig] = None,
-        lora_weights_path: Optional[str] = None,
+        lora_config: LoRAConfig | None = None,
+        lora_weights_path: str | None = None,
     ):
         """Initialize VoxCPM TTS pipeline.
 
@@ -143,8 +145,8 @@ class VoxCPM:
         local_files_only: bool = False,
         optimize: bool = True,
         device: str | None = None,
-        lora_config: Optional[LoRAConfig] = None,
-        lora_weights_path: Optional[str] = None,
+        lora_config: LoRAConfig | None = None,
+        lora_weights_path: str | None = None,
         **kwargs,
     ):
         """Instantiate ``VoxCPM`` from a Hugging Face Hub snapshot.
@@ -220,7 +222,7 @@ class VoxCPM:
         retry_badcase_max_times: int = 3,
         retry_badcase_ratio_threshold: float = 6.0,
         streaming: bool = False,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ) -> Generator[np.ndarray, None, None]:
         """Synthesize speech for the given text and return a single waveform.
 

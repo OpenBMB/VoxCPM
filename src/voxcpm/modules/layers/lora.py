@@ -1,9 +1,8 @@
 import math
-from typing import Optional
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn
 
 
 class LoRALinear(nn.Module):
@@ -80,7 +79,7 @@ class LoRALinear(nn.Module):
         return self.scaling.item() != 0.0
 
 
-def _get_parent_module(root: nn.Module, name: str) -> Optional[nn.Module]:
+def _get_parent_module(root: nn.Module, name: str) -> nn.Module | None:
     """
     根据类似 'layers.0.self_attn.q_proj' 的全名，返回 parent module（即 q_proj 的上一级）。
     """

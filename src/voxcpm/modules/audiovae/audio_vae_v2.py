@@ -1,12 +1,11 @@
 import math
-from typing import List, Optional
 
 import numpy as np
 import torch
-from torch import nn
 import torch.nn.functional as F
-from torch.nn.utils import weight_norm
 from pydantic import BaseModel
+from torch import nn
+from torch.nn.utils import weight_norm
 
 
 def WNConv1d(*args, **kwargs):
@@ -276,7 +275,7 @@ class CausalDecoder(nn.Module):
         depthwise: bool = False,
         d_out: int = 1,
         use_noise_block: bool = False,
-        sr_bin_boundaries: List[int] = None,
+        sr_bin_boundaries: list[int] = None,
         cond_type: str = "scale_bias",
         cond_dim: int = 128,
         cond_out_layer: bool = False,
@@ -358,15 +357,15 @@ class CausalDecoder(nn.Module):
 
 class AudioVAEConfig(BaseModel):
     encoder_dim: int = 128
-    encoder_rates: List[int] = [2, 5, 8, 8]
+    encoder_rates: list[int] = [2, 5, 8, 8]
     latent_dim: int = 64
     decoder_dim: int = 2048
-    decoder_rates: List[int] = [8, 6, 5, 2, 2, 2]
+    decoder_rates: list[int] = [8, 6, 5, 2, 2, 2]
     depthwise: bool = True
     sample_rate: int = 16000
     out_sample_rate: int = 48000
     use_noise_block: bool = False
-    sr_bin_boundaries: Optional[List[int]] = [20000, 30000, 40000]
+    sr_bin_boundaries: list[int] | None = [20000, 30000, 40000]
     cond_type: str = "scale_bias"
     cond_dim: int = 128
     cond_out_layer: bool = False
