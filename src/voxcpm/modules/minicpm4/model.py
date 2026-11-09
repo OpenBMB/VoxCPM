@@ -6,6 +6,23 @@ import math
 from .cache import StaticKVCache
 
 
+def rope_scaling_factor(max_position_embeddings: int, original_max_position_embeddings: int) -> float:
+    """NTK scale used by MiniCPM LongRoPE.
+
+    ``log(original_max_position_embeddings)`` is zero when the original
+    context is 1, and the following division crashes.
+    """
+    if original_max_position_embeddings <= 1:
+        raise ValueError(
+            "original_max_position_embeddings must be greater than 1, "
+            f"got {original_max_position_embeddings}"
+        )
+    if max_position_embeddings <= 0:
+        raise ValueError(f"max_position_embeddings must be positive, got {max_position_embeddings}")
+    scale = max_position_embeddings / original_max_position_embeddings
+    return math.sqrt(1 + math.log(scale) / math.log(original_max_position_embeddings))
+
+
 def rms_layernorm(hidden: torch.Tensor, weight: torch.Tensor, eps: float):
     old_dtype = hidden.dtype
     variance = hidden.to(torch.float32).pow(2).mean(dim=-1, keepdim=True)
@@ -64,8 +81,10 @@ class MiniCPMLongRoPE(nn.Module):
         self.long_factor = config.rope_scaling.long_factor
         self.original_max_position_embeddings = config.rope_scaling.original_max_position_embeddings
 
-        scale = self.max_position_embeddings / self.original_max_position_embeddings
-        self.scaling_factor = math.sqrt(1 + math.log(scale) / math.log(self.original_max_position_embeddings))
+        self.scaling_factor = rope_scaling_factor(
+            self.max_position_embeddings,
+            self.original_max_position_embeddings,
+        )
         inv_freq = 1.0 / (self.base ** (torch.arange(0, self.dim, 2).float() / self.dim))
         self.register_buffer("inv_freq", inv_freq, persistent=False)
 
