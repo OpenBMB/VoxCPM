@@ -33,7 +33,7 @@
     <img src="./assets/discord-logo.png" width="16" height="16" style="vertical-align:middle;"> Discord
   </a>
   &nbsp;|&nbsp;
-  <a href="https://modelbest.feishu.cn/wiki/UtWxwcERfiRIpIkBOjuc3h9tn1D?fromScene=spaceOverview" style="display:inline-block;vertical-align:middle;">
+  <a href="https://openbmb.cn/docs/" style="display:inline-block;vertical-align:middle;">
     📚 MiniCPM Wiki
   </a>
 </p>
