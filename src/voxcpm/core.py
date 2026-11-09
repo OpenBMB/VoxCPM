@@ -10,6 +10,32 @@ from .model.voxcpm import VoxCPMModel, LoRAConfig
 from .model.voxcpm2 import VoxCPM2Model
 from .model.utils import next_and_close
 
+# Volume control (issue #362): a numeric, reproducible alternative to shaping
+# loudness only through the prompt text.
+_DEFAULT_VOLUME_MULTIPLIER = 1.0  # identity: leave the model's natural level untouched
+_AUDIO_PEAK_LIMIT = 1.0  # full-scale amplitude for float32 PCM waveforms
+
+
+def _apply_volume(wav: np.ndarray, multiplier: float) -> np.ndarray:
+    """Linearly scale a waveform by ``multiplier``, guarding against clipping.
+
+    The model's natural output already matches the reference/prompt audio
+    loudness, so ``multiplier`` is effectively expressed relative to the
+    reference volume (e.g. ``3.0`` ≈ three times the reference volume). Peaks
+    that would exceed full scale are attenuated to avoid hard clipping.
+
+    ponytail: streaming applies the peak limiter per chunk, so a single very
+    loud chunk is attenuated more than its neighbours; switch to a two-pass
+    scale over the full utterance if cross-chunk gain drift becomes audible.
+    """
+    if multiplier == _DEFAULT_VOLUME_MULTIPLIER or wav.size == 0:
+        return wav
+    scaled = wav * multiplier
+    peak = float(np.max(np.abs(scaled)))
+    if peak > _AUDIO_PEAK_LIMIT:
+        scaled = scaled * (_AUDIO_PEAK_LIMIT / peak)
+    return scaled.astype(wav.dtype, copy=False)
+
 
 def resolve_model_path(
     path_or_id: str,
@@ -221,6 +247,7 @@ class VoxCPM:
         retry_badcase_ratio_threshold: float = 6.0,
         streaming: bool = False,
         seed: Optional[int] = None,
+        volume_multiplier: float = _DEFAULT_VOLUME_MULTIPLIER,
     ) -> Generator[np.ndarray, None, None]:
         """Synthesize speech for the given text and return a single waveform.
 
@@ -244,6 +271,11 @@ class VoxCPM:
             retry_badcase_ratio_threshold: Threshold for audio-to-text ratio.
             streaming: Whether to return a generator of audio chunks.
             seed: Optional random seed for reproducibility.
+            volume_multiplier: Linear gain applied to the output waveform,
+                relative to the model's natural (reference-matched) level.
+                ``1.0`` leaves it unchanged; ``3.0`` is roughly three times the
+                reference volume. Must be positive. Peaks are limited to avoid
+                clipping.
         Returns:
             Generator of numpy.ndarray: 1D waveform array (float32) on CPU.
             Yields audio chunks for each generation step if ``streaming=True``,
@@ -262,6 +294,9 @@ class VoxCPM:
 
         if (prompt_wav_path is None) != (prompt_text is None):
             raise ValueError("prompt_wav_path and prompt_text must both be provided or both be None")
+
+        if volume_multiplier <= 0:
+            raise ValueError(f"volume_multiplier must be positive, got {volume_multiplier}")
 
         is_v2 = isinstance(self.tts_model, VoxCPM2Model)
         if reference_wav_path is not None and not is_v2:
@@ -326,12 +361,12 @@ class VoxCPM:
             if streaming:
                 try:
                     for wav, _, _ in generate_result:
-                        yield wav.squeeze(0).cpu().numpy()
+                        yield _apply_volume(wav.squeeze(0).cpu().numpy(), volume_multiplier)
                 finally:
                     generate_result.close()
             else:
                 wav, _, _ = next_and_close(generate_result)
-                yield wav.squeeze(0).cpu().numpy()
+                yield _apply_volume(wav.squeeze(0).cpu().numpy(), volume_multiplier)
 
         finally:
             for tmp_path in temp_files:
