@@ -1,7 +1,7 @@
 <h2 align="center">VoxCPM2: Tokenizer-Free TTS for Multilingual Speech Generation, Creative Voice Design, and True-to-Life Cloning</h2>
 
 <p align="center">
-  <b>English</b> | <a href="./README_zh.md">中文</a>
+  <b>English</b> | <a href="./README_zh.md">中文</a> | <a href="./README_ja.md">日本語</a>
 </p>
 
 <p align="center">
