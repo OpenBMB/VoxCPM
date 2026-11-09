@@ -37,6 +37,22 @@ def apply_generation_seed(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
+def _normalize_subword_token(token: str) -> str:
+    """Drop a leading WordPiece or SentencePiece marker.
+
+    The lookup set has to use the same normalization as ``tokenize``. A vocab
+    entry ``▁你好`` or ``##你好`` otherwise never matches the cleaned token,
+    and the multi-character piece is left intact.
+    """
+    if token.startswith("##"):
+        token = token[2:]
+    return token.replace("▁", "")
+
+
+def _is_multichar_chinese(token: str) -> bool:
+    return len(token) >= 2 and all("\u4e00" <= char <= "\u9fff" for char in token)
+
+
 def mask_multichar_chinese_tokens(tokenizer: PreTrainedTokenizer):
     """Create a tokenizer wrapper that converts multi-character Chinese tokens to single characters.
 
@@ -58,7 +74,9 @@ def mask_multichar_chinese_tokens(tokenizer: PreTrainedTokenizer):
     """
     # Pre-compute multi-character tokens (length >= 2, pure Chinese characters)
     multichar_tokens = {
-        token for token in tokenizer.vocab.keys() if len(token) >= 2 and all("\u4e00" <= c <= "\u9fff" for c in token)
+        clean
+        for token in tokenizer.vocab.keys()
+        if _is_multichar_chinese(clean := _normalize_subword_token(token))
     }
 
     class CharTokenizerWrapper:
@@ -100,7 +118,7 @@ def mask_multichar_chinese_tokens(tokenizer: PreTrainedTokenizer):
 
             for token in tokens:
                 # Remove possible subword prefix
-                clean_token = token.replace("▁", "")
+                clean_token = _normalize_subword_token(token)
 
                 if clean_token in self.multichar_tokens:
                     # Split multi-character token into single characters
