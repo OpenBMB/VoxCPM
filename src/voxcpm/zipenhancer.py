@@ -8,7 +8,9 @@ Related dependencies are imported only when denoising functionality is needed.
 import os
 import tempfile
 from typing import Optional
+import torch
 import torchaudio
+import soundfile as sf
 from modelscope.pipelines import pipeline
 from modelscope.utils.constant import Tasks
 
@@ -26,16 +28,38 @@ class ZipEnhancer:
         self._pipeline = pipeline(Tasks.acoustic_noise_suppression, model=self.model_path)
 
     def _normalize_loudness(self, wav_path: str):
-        """
-        Audio loudness normalization
+            """
+            Audio loudness normalization (Compatible with both standard and Windows CUDA environments)
 
-        Args:
-            wav_path: Audio file path
-        """
-        audio, sr = torchaudio.load(wav_path)
-        loudness = torchaudio.functional.loudness(audio, sr)
-        normalized_audio = torchaudio.functional.gain(audio, -20 - loudness)
-        torchaudio.save(wav_path, normalized_audio, sr)
+            Args:
+                wav_path: Audio file path
+            """
+            # Default to loading with torchaudio
+            try:
+                audio, sr = torchaudio.load(wav_path)
+                use_soundfile = False
+            except Exception:
+                # Fallback to soundfile if torchaudio fails (e.g., Windows CUDA backend issues)
+                audio_np, sr = sf.read(wav_path)
+                # soundfile returns (samples,) or (samples, channels), needs to be (channels, samples)
+                audio = torch.from_numpy(audio_np).float()
+                if audio.dim() == 1:
+                    audio = audio.unsqueeze(0)
+                else:
+                    audio = audio.transpose(0, 1)
+                use_soundfile = True
+
+            # Loudness calculation and gain adjustment (Pure PyTorch operations, universal)
+            loudness = torchaudio.functional.loudness(audio, sr)
+            normalized_audio = torchaudio.functional.gain(audio, -20 - loudness)
+
+            # Choose the corresponding save method based on how it was loaded
+            if use_soundfile:
+                # Transpose back to (samples, channels) and remove extra dimensions before saving
+                audio_to_save = normalized_audio.transpose(0, 1).squeeze().numpy()
+                sf.write(wav_path, audio_to_save, sr)
+            else:
+                torchaudio.save(wav_path, normalized_audio, sr)
 
     def enhance(self, input_path: str, output_path: Optional[str] = None, normalize_loudness: bool = True) -> str:
         """
