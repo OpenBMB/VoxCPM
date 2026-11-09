@@ -274,6 +274,11 @@ python app.py --device auto
 
 Supported values are `auto`, `cpu`, `mps`, `cuda`, and `cuda:N`. On Apple Silicon Macs, `auto` uses MPS when available.
 
+### Performance benchmarking
+
+Use the reproducible [benchmark runner](BENCHMARKS.md) to measure model-load
+time, real-time factor, batch throughput, and peak CUDA memory on your hardware.
+
 ### 🚢 Production Deployment (Nano-vLLM)
 
 For high-throughput serving, use **[Nano-vLLM-VoxCPM](https://github.com/a710128/nanovllm-voxcpm)** — a dedicated inference engine built on Nano-vLLM with concurrent request support and an async API.
