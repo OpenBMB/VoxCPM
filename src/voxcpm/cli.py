@@ -353,6 +353,8 @@ def cmd_batch(args, parser):
             print(f"Failed on line {i}: {e}", file=sys.stderr)
 
     print(f"\nBatch finished: {success_count}/{len(texts)} succeeded", file=sys.stderr)
+    if success_count != len(texts):
+        sys.exit(1)
 
 
 def default_timestamp_path(audio_path: Path) -> Path:
