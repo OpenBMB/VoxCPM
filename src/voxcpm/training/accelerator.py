@@ -11,6 +11,38 @@ import torch.distributed as dist
 import torch.utils.data
 from torch.nn.parallel import DistributedDataParallel
 
+from voxcpm.model.utils import current_accelerator_device_type
+
+# Device types torch.amp knows how to autocast / grad-scale. Accelerators outside
+# this set keep the pre-existing behaviour (no AMP).
+_AMP_DEVICE_TYPES = frozenset({"cuda", "xpu", "npu", "hpu"})
+
+
+def _distributed_backend(device_type: str) -> str:
+    """Pick the collective backend that matches the active accelerator."""
+    default_backend = getattr(dist, "get_default_backend_for_device", None)
+    if default_backend is not None:
+        try:
+            return default_backend(torch.device(device_type))
+        except Exception:
+            pass
+    return {"cuda": "nccl", "xpu": "xccl", "npu": "hccl"}.get(device_type, "gloo")
+
+
+def _device_context(device_type: str, index: int):
+    """Context manager binding the current process to device ``index``, if any."""
+    accelerator = getattr(torch, "accelerator", None)
+    if accelerator is not None and hasattr(accelerator, "device_index"):
+        try:
+            return accelerator.device_index(index)
+        except Exception:
+            pass
+    module = getattr(torch, device_type, None)
+    device_ctx = getattr(module, "device", None)
+    if callable(device_ctx):
+        return device_ctx(index)
+    return None
+
 
 class Accelerator:
     """
@@ -18,16 +50,20 @@ class Accelerator:
     training utilities. It initializes a distributed process group when
     ``torchrun`` is used and exposes helpers for AMP, gradient scaling and
     preparing models/dataloaders for DDP.
+
+    The accelerator is resolved through PyTorch's device-agnostic runtime, so
+    CUDA, Ascend NPU, XPU and CPU-only machines all take the matching code path.
     """
 
     def __init__(self, amp: bool = False, seed: int = 42):
         self.world_size = int(os.getenv("WORLD_SIZE", "1"))
+        self.local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+        self.device_type = current_accelerator_device_type() or "cpu"
 
         if self.world_size > 1 and not dist.is_initialized():
-            dist.init_process_group("nccl", init_method="env://")
+            dist.init_process_group(_distributed_backend(self.device_type), init_method="env://")
 
         self.rank = dist.get_rank() if dist.is_initialized() else 0
-        self.local_rank = int(os.environ.get("LOCAL_RANK", "0"))
         self.amp = amp
 
         # Set random seed to ensure model initialization consistency
@@ -46,9 +82,14 @@ class Accelerator:
             def update(self):
                 pass
 
-        self.scaler = torch.amp.GradScaler("cuda") if (amp and torch.cuda.is_available()) else DummyScaler()
-        self.device_ctx = torch.cuda.device(self.local_rank) if torch.cuda.is_available() else None
+        amp_device_type = self._amp_device_type()
+        self.scaler = torch.amp.GradScaler(amp_device_type) if (amp and amp_device_type) else DummyScaler()
+        self.device_ctx = _device_context(self.device_type, self.local_rank) if self.device_type != "cpu" else None
         self._ddp_model = None  # For no_sync support
+
+    def _amp_device_type(self) -> typing.Optional[str]:
+        """Device type usable by torch.amp, or ``None`` when AMP is unavailable."""
+        return self.device_type if self.device_type in _AMP_DEVICE_TYPES else None
 
     def _set_seed(self, seed: int):
         """Set random seed to ensure model initialization consistency across multiple GPUs"""
@@ -105,17 +146,20 @@ class Accelerator:
 
     @property
     def device(self):
-        if torch.cuda.is_available():
-            return torch.device("cuda", self.local_rank)
-        if torch.backends.mps.is_available():
+        if self.device_type == "cpu":
+            return torch.device("cpu")
+        if self.device_type == "mps":
             return torch.device("mps")
-        return torch.device("cpu")
+        return torch.device(self.device_type, self.local_rank)
 
     # ------------------------------------------------------------------ #
     # AMP helpers
     # ------------------------------------------------------------------ #
     def autocast(self, *args, **kwargs):
-        return torch.amp.autocast("cuda", enabled=self.amp, *args, **kwargs)
+        amp_device_type = self._amp_device_type()
+        if amp_device_type is None:
+            return torch.amp.autocast("cpu", enabled=False, *args, **kwargs)
+        return torch.amp.autocast(amp_device_type, enabled=self.amp, *args, **kwargs)
 
     def backward(self, loss: torch.Tensor):
         self.scaler.scale(loss).backward()

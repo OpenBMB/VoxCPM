@@ -159,6 +159,49 @@ def _has_mps() -> bool:
     return hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
 
 
+def _has_backend(device_type: str) -> bool:
+    """Whether a torch device backend such as ``npu`` or ``xpu`` is usable."""
+    module = getattr(torch, device_type, None)
+    is_available = getattr(module, "is_available", None)
+    return bool(callable(is_available) and is_available())
+
+
+def current_accelerator_device_type() -> Optional[str]:
+    """Return the device type of the accelerator PyTorch is currently using.
+
+    ``torch.accelerator`` reports the active accelerator of every backend that
+    registers with PyTorch's device-agnostic runtime, so CUDA, NPU, XPU and
+    future accelerators are all covered. torch builds predating
+    ``torch.accelerator`` fall back to probing the individual backends.
+
+    Returns ``None`` when no accelerator is available (CPU-only machines).
+    """
+    accelerator = getattr(torch, "accelerator", None)
+    if accelerator is not None:
+        try:
+            current = accelerator.current_accelerator()
+        except Exception:
+            current = None
+        if current is not None:
+            return str(getattr(current, "type", current))
+    for device_type in ("npu", "xpu"):
+        if _has_backend(device_type):
+            return device_type
+    return None
+
+
+def _device_available(device: str) -> bool:
+    """Whether an explicit device string such as ``cuda:0`` or ``npu:1`` is usable."""
+    device_type = device.split(":", 1)[0].strip().lower()
+    if device_type == "cpu":
+        return True
+    if device_type == "cuda":
+        return torch.cuda.is_available()
+    if device_type == "mps":
+        return _has_mps()
+    return _has_backend(device_type)
+
+
 def pick_runtime_dtype(device: str, configured_dtype: str) -> str:
     """Pick a safe runtime dtype for the resolved device.
 
@@ -190,16 +233,16 @@ def auto_select_device(preferred_device: Optional[str] = "cuda") -> str:
 
     Preference order:
     - if the preferred device is available, use it
-    - otherwise fall back to CUDA -> MPS -> CPU
+    - otherwise fall back to the current accelerator -> CUDA -> MPS -> CPU
     """
     preferred = (preferred_device or "cuda").strip().lower()
 
-    if preferred.startswith("cuda") and torch.cuda.is_available():
+    if _device_available(preferred):
         return preferred
-    if preferred == "mps" and _has_mps():
-        return "mps"
-    if preferred == "cpu":
-        return "cpu"
+
+    accelerator = current_accelerator_device_type()
+    if accelerator is not None and _device_available(accelerator):
+        return accelerator
 
     if torch.cuda.is_available():
         return "cuda"
@@ -215,6 +258,10 @@ def resolve_runtime_device(device: Optional[str], configured_device: str = "cuda
     Semantics:
     - ``device`` is ``None`` or ``"auto"``: use automatic fallback selection
     - otherwise: treat it as an explicit user choice and validate availability
+
+    Accelerators other than CUDA/MPS (for example ``npu`` or ``xpu``) are
+    accepted whenever the backend is actually available, so explicit device
+    choices keep working on non-CUDA hardware.
     """
     explicit = None if device is None else device.strip().lower()
 
@@ -235,8 +282,10 @@ def resolve_runtime_device(device: Optional[str], configured_device: str = "cuda
         return "mps"
     if explicit == "cpu":
         return "cpu"
+    if _device_available(explicit):
+        return explicit
 
     raise ValueError(
-        f"Unsupported device '{device}'. Supported values are 'auto', 'cpu', 'mps', "
-        "'cuda', or indexed CUDA devices like 'cuda:0'."
+        f"Unsupported or unavailable device '{device}'. Supported values are 'auto', 'cpu', 'mps', "
+        "'cuda', indexed CUDA devices like 'cuda:0', and any available accelerator such as 'npu' or 'xpu'."
     )
