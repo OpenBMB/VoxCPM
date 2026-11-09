@@ -2,6 +2,16 @@ from typing import List, Tuple
 import torch
 
 
+def _prompt_length(kv_caches: List[Tuple[torch.Tensor, torch.Tensor]], max_length: int) -> int:
+    """Length of a prompt cache, rejected when it cannot fit in the buffer."""
+    if not kv_caches:
+        raise ValueError("KV cache fill requires at least one layer")
+    seq_len = int(kv_caches[0][0].size(2))
+    if seq_len > max_length:
+        raise ValueError(f"KV cache prompt length {seq_len} exceeds max_length {max_length}")
+    return seq_len
+
+
 class StaticKVCache:
     def __init__(
         self,
@@ -40,7 +50,7 @@ class StaticKVCache:
         return ret
 
     def fill_caches(self, kv_caches: List[Tuple[torch.Tensor, torch.Tensor]]):
-        self.current_length = kv_caches[0][0].size(2)
+        self.current_length = _prompt_length(kv_caches, self.max_length)
         self.kv_cache.zero_()
         for i in range(self.num_layers):
             self.kv_cache[0, i, :, :, : self.current_length, :] = kv_caches[i][0]
