@@ -8,7 +8,7 @@ from typing import Generator, Optional
 from huggingface_hub import snapshot_download
 from .model.voxcpm import VoxCPMModel, LoRAConfig
 from .model.voxcpm2 import VoxCPM2Model
-from .model.utils import next_and_close
+from .model.utils import next_and_close, validate_inference_options
 
 
 def resolve_model_path(
@@ -51,6 +51,8 @@ class VoxCPM:
         device: str | None = None,
         lora_config: Optional[LoRAConfig] = None,
         lora_weights_path: Optional[str] = None,
+        attention_backend: str = "auto",
+        max_cache_length: int | None = None,
     ):
         """Initialize VoxCPM TTS pipeline.
 
@@ -69,7 +71,12 @@ class VoxCPM:
                 provided without lora_config, a default config will be created.
             lora_weights_path: Path to pre-trained LoRA weights (.pth file or directory
                 containing lora_weights.ckpt). If provided, LoRA weights will be loaded.
+            attention_backend: Decode attention backend: ``"auto"``, ``"cudnn"``, or ``"math"``.
+                cuDNN requires CUDA; explicit selection with torch.compile requires PyTorch >= 2.6.
+            max_cache_length: Positive KV-cache capacity for combined text, reference, and generated tokens.
+                None uses the checkpoint's max_length; this does not change generation length limits.
         """
+        validate_inference_options(attention_backend, max_cache_length)
         print(
             f"voxcpm_model_path: {voxcpm_model_path}, zipenhancer_model_path: {zipenhancer_model_path}, enable_denoiser: {enable_denoiser}",
             file=sys.stderr,
@@ -99,6 +106,8 @@ class VoxCPM:
                 optimize=optimize,
                 device=device,
                 lora_config=lora_config,
+                attention_backend=attention_backend,
+                max_cache_length=max_cache_length,
             )
             print("Loaded VoxCPM2Model", file=sys.stderr)
         elif arch == "voxcpm":
@@ -107,6 +116,8 @@ class VoxCPM:
                 optimize=optimize,
                 device=device,
                 lora_config=lora_config,
+                attention_backend=attention_backend,
+                max_cache_length=max_cache_length,
             )
             print("Loaded VoxCPMModel", file=sys.stderr)
         else:
@@ -145,6 +156,8 @@ class VoxCPM:
         device: str | None = None,
         lora_config: Optional[LoRAConfig] = None,
         lora_weights_path: Optional[str] = None,
+        attention_backend: str = "auto",
+        max_cache_length: int | None = None,
         **kwargs,
     ):
         """Instantiate ``VoxCPM`` from a Hugging Face Hub snapshot.
@@ -167,6 +180,10 @@ class VoxCPM:
             lora_weights_path: Path to pre-trained LoRA weights (.pth file or directory
                 containing lora_weights.ckpt). If provided, LoRA weights will be loaded
                 after model initialization.
+            attention_backend: Decode attention backend: ``"auto"``, ``"cudnn"``, or ``"math"``.
+                cuDNN requires CUDA; explicit selection with torch.compile requires PyTorch >= 2.6.
+            max_cache_length: Positive KV-cache capacity for combined text, reference, and generated tokens.
+                None uses the checkpoint's max_length; this does not change generation length limits.
         Kwargs:
             Additional keyword arguments passed to the ``VoxCPM`` constructor.
 
@@ -178,6 +195,7 @@ class VoxCPM:
             ValueError: If neither a valid ``hf_model_id`` nor a resolvable
                 ``hf_model_id`` is provided.
         """
+        validate_inference_options(attention_backend, max_cache_length)
         if not hf_model_id:
             raise ValueError("You must provide hf_model_id")
 
@@ -195,6 +213,8 @@ class VoxCPM:
             device=device,
             lora_config=lora_config,
             lora_weights_path=lora_weights_path,
+            attention_backend=attention_backend,
+            max_cache_length=max_cache_length,
             **kwargs,
         )
 

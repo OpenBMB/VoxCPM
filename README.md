@@ -142,6 +142,23 @@ wav = model.generate(
 sf.write("demo.wav", wav, model.tts_model.sample_rate)
 ```
 
+#### Inference runtime options (opt-in)
+
+The defaults `attention_backend="auto"` and `max_cache_length=None` preserve the current attention selection and the checkpoint's `config.max_length` cache capacity. To select cuDNN attention for autoregressive LM decoding and use a smaller fixed KV cache:
+
+```python
+model = VoxCPM.from_pretrained(
+    "openbmb/VoxCPM2",
+    device="cuda",
+    attention_backend="cudnn",
+    max_cache_length=2048,
+)
+```
+
+These kwargs also work with local model paths and the `VoxCPM(...)` constructor. Backend choices are `auto`, `cudnn`, and `math`; `cudnn` is CUDA-only. Explicit backend selection with CUDA optimization requires **PyTorch ≥ 2.6**. The default path still supports PyTorch ≥ 2.5; on older supported versions, use `optimize=False` in Python or `--no-optimize` in the CLI for an explicit backend. An unsupported explicit backend raises an error rather than silently falling back. Prefill and diffusion attention are unchanged.
+
+`max_cache_length` must be a positive integer and covers **text + reference + generated tokens**, not words or audio samples. It only sizes the KV caches; it does not modify the checkpoint or shorten the requested generation. If the combined sequence exceeds capacity, inference fails instead of truncating speech. Choose capacity for the full workload; memory use, speed, and numerical output can vary by backend and hardware.
+
 #### 🎨 Voice Design
 
 Create a voice from a natural-language description — no reference audio needed. **Format:** put the description in parentheses at the start of `text`(e.g. `"(your voice description)The text to synthesize."`):
@@ -256,9 +273,17 @@ voxcpm design \
   --timestamp-level char \
   --timestamp-language zh
 
+# Opt-in CUDA LM decode backend and KV-cache capacity
+voxcpm design \
+  --text "Hello from VoxCPM2." \
+  --device cuda --attention-backend cudnn --max-cache-length 2048 \
+  --output out.wav
+
 # Help
 voxcpm --help
 ```
+
+`--attention-backend` and `--max-cache-length` are available on `design`, `clone`, `batch`, and the legacy root CLI. Omitting them preserves the defaults; see [Inference runtime options](#inference-runtime-options-opt-in) for capacity and PyTorch requirements.
 
 ### Web Demo
 
@@ -270,9 +295,14 @@ Use `--device` to choose the runtime device:
 
 ```bash
 python app.py --device auto
+
+# Opt-in CUDA backend and cache capacity, configured at startup
+python app.py --device cuda --attention-backend cudnn --max-cache-length 2048
 ```
 
 Supported values are `auto`, `cpu`, `mps`, `cuda`, and `cuda:N`. On Apple Silicon Macs, `auto` uses MPS when available.
+
+The runtime options have the same defaults and limits as the Python API. The web demo enables optimization on CUDA, so an explicit backend there requires PyTorch ≥ 2.6; use the CLI with `--no-optimize` or the API with `optimize=False` on older supported PyTorch versions.
 
 ### 🚢 Production Deployment (Nano-vLLM)
 

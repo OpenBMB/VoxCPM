@@ -1,3 +1,4 @@
+import argparse
 import os
 import re
 import sys
@@ -225,10 +226,18 @@ _APP_THEME = gr.themes.Soft(
 
 
 class VoxCPMDemo:
-    def __init__(self, model_id: str = "openbmb/VoxCPM2", device: str = "auto") -> None:
+    def __init__(
+        self,
+        model_id: str = "openbmb/VoxCPM2",
+        device: str = "auto",
+        attention_backend: str = "auto",
+        max_cache_length: int | None = None,
+    ) -> None:
         self.device = resolve_runtime_device(device, "cuda")
         logger.info(f"Running VoxCPM on device: {self.device}")
         self.optimize = self.device.startswith("cuda")
+        self.attention_backend = attention_backend
+        self.max_cache_length = max_cache_length
 
         self.asr_model_id = "iic/SenseVoiceSmall"
         self.asr_device = "cuda:0" if self.device.startswith("cuda") else "cpu"
@@ -245,6 +254,8 @@ class VoxCPMDemo:
             self._model_id,
             optimize=self.optimize,
             device=self.device,
+            attention_backend=self.attention_backend,
+            max_cache_length=self.max_cache_length,
         )
         logger.info("Model loaded successfully.")
         return self.voxcpm_model
@@ -560,8 +571,15 @@ def run_demo(
     show_error: bool = True,
     model_id: str = "openbmb/VoxCPM2",
     device: str = "auto",
+    attention_backend: str = "auto",
+    max_cache_length: int | None = None,
 ):
-    demo = VoxCPMDemo(model_id=model_id, device=device)
+    demo = VoxCPMDemo(
+        model_id=model_id,
+        device=device,
+        attention_backend=attention_backend,
+        max_cache_length=max_cache_length,
+    )
     interface = create_demo_interface(demo)
     interface.queue(max_size=10, default_concurrency_limit=1).launch(
         server_name=server_name,
@@ -573,9 +591,17 @@ def run_demo(
     )
 
 
-if __name__ == "__main__":
-    import argparse
+def _positive_int(value: str) -> int:
+    try:
+        number = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("must be a positive integer") from None
+    if number <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return number
 
+
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--model-id",
@@ -597,10 +623,24 @@ if __name__ == "__main__":
         default="auto",
         help="Runtime device: auto, cpu, mps, cuda, or cuda:N (default: auto)",
     )
+    parser.add_argument(
+        "--attention-backend",
+        choices=["auto", "cudnn", "math"],
+        default="auto",
+        help="LM decode attention backend (default: auto; cudnn requires CUDA)",
+    )
+    parser.add_argument(
+        "--max-cache-length",
+        type=_positive_int,
+        default=None,
+        help="KV-cache token capacity including text, reference, and generation (default: model config)",
+    )
     args = parser.parse_args()
     run_demo(
         model_id=args.model_id,
         server_name=args.host,
         server_port=args.port,
         device=args.device,
+        attention_backend=args.attention_backend,
+        max_cache_length=args.max_cache_length,
     )
