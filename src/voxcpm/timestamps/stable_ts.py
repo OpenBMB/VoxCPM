@@ -4,6 +4,14 @@ from typing import Any
 
 from .base import TimestampItem, TimestampLevel, TimestampResult
 
+# stable-ts sometimes returns segments with empty or missing word lists.
+# Segment start/end/text is still usable timing, so word and char requests
+# degrade to that span instead of discarding the region.
+_MISSING_WORD_TIMING_WARNING = (
+    "No per-word timings were available for one or more segments; "
+    "those timestamps were derived from segment start, end, and text."
+)
+
 
 class StableTSAligner:
     def __init__(
@@ -33,7 +41,7 @@ class StableTSAligner:
         level: TimestampLevel = "word",
     ) -> TimestampResult:
         result = self.model.align(audio_path, text, language=self.language)
-        items = extract_timestamp_items(result, level)
+        items, warning = _extract_timestamp_items(result, level)
         return TimestampResult(
             audio_path=audio_path,
             sample_rate=sample_rate,
@@ -41,40 +49,74 @@ class StableTSAligner:
             level=level,
             text=text,
             items=items,
+            warning=warning,
         )
 
 
 def extract_timestamp_items(result: Any, level: TimestampLevel) -> list[TimestampItem]:
+    items, _warning = _extract_timestamp_items(result, level)
+    return items
+
+
+def _extract_timestamp_items(result: Any, level: TimestampLevel) -> tuple[list[TimestampItem], str | None]:
     segments = _get_value(result, "segments", []) or []
     if level == "segment":
-        return [
-            TimestampItem(
-                text=str(_get_value(segment, "text", "")).strip(),
-                start=float(_get_value(segment, "start", 0.0) or 0.0),
-                end=float(_get_value(segment, "end", 0.0) or 0.0),
-                level="segment",
-            )
-            for segment in segments
-            if str(_get_value(segment, "text", "")).strip()
-        ]
+        return _items_from_segments(segments, "segment"), None
 
-    words = []
+    words: list[TimestampItem] = []
+    fell_back = False
     for segment in segments:
-        for word in _get_value(segment, "words", []) or []:
-            text = str(_get_value(word, "word", _get_value(word, "text", ""))).strip()
-            if not text:
-                continue
-            words.append(
-                TimestampItem(
-                    text=text,
-                    start=float(_get_value(word, "start", 0.0) or 0.0),
-                    end=float(_get_value(word, "end", 0.0) or 0.0),
-                    level="word",
-                )
-            )
+        segment_words = _items_from_words(segment)
+        if segment_words:
+            words.extend(segment_words)
+            continue
+        derived = _item_from_segment(segment, "word")
+        if derived is None:
+            continue
+        words.append(derived)
+        fell_back = True
 
+    warning = _MISSING_WORD_TIMING_WARNING if fell_back else None
     if level == "char":
-        return split_word_items_to_chars(words)
+        return split_word_items_to_chars(words), warning
+    return words, warning
+
+
+def _items_from_segments(segments: list[Any], level: str) -> list[TimestampItem]:
+    items = []
+    for segment in segments:
+        item = _item_from_segment(segment, level)
+        if item is not None:
+            items.append(item)
+    return items
+
+
+def _item_from_segment(segment: Any, level: str) -> TimestampItem | None:
+    text = str(_get_value(segment, "text", "")).strip()
+    if not text:
+        return None
+    return TimestampItem(
+        text=text,
+        start=float(_get_value(segment, "start", 0.0) or 0.0),
+        end=float(_get_value(segment, "end", 0.0) or 0.0),
+        level=level,
+    )
+
+
+def _items_from_words(segment: Any) -> list[TimestampItem]:
+    words = []
+    for word in _get_value(segment, "words", []) or []:
+        text = str(_get_value(word, "word", _get_value(word, "text", ""))).strip()
+        if not text:
+            continue
+        words.append(
+            TimestampItem(
+                text=text,
+                start=float(_get_value(word, "start", 0.0) or 0.0),
+                end=float(_get_value(word, "end", 0.0) or 0.0),
+                level="word",
+            )
+        )
     return words
 
 
