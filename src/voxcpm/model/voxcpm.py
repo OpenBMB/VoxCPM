@@ -502,6 +502,16 @@ class VoxCPMModel(nn.Module):
         if not streaming:
             self.last_successful_seed = last_attempt_seed
             decode_audio = self.audio_vae.decode(latent_pred.to(torch.float32)).squeeze(1).cpu()
+            # When a prompt is given, _inference prepends min(streaming_prefix_len - 1,
+            # prompt_patches) prompt patches to the latent as decoding context. The streaming
+            # branch above and _generate_with_prompt_cache both trim this prefix; the
+            # non-streaming branch here must do the same, otherwise the returned waveform
+            # starts with a fragment of the prompt audio instead of pure generated speech.
+            patch_len = self.patch_size * self.chunk_size
+            # _generate calls _inference with the default streaming_prefix_len (3).
+            context_len = min(2, int(audio_mask.sum().item()))
+            if context_len > 0:
+                decode_audio = decode_audio[..., patch_len * context_len :]
             yield decode_audio
 
     @torch.inference_mode()
@@ -738,8 +748,12 @@ class VoxCPMModel(nn.Module):
             self.last_successful_seed = last_attempt_seed
             decode_audio = self.audio_vae.decode(latent_pred.to(torch.float32))
             patch_len = self.patch_size * self.chunk_size
-            if audio_mask.sum().item() > 0:
-                decode_audio = decode_audio[..., patch_len * (streaming_prefix_len - 1) :].squeeze(1).cpu()
+            # _inference prepends min(streaming_prefix_len - 1, prompt_patches) context patches,
+            # not always streaming_prefix_len - 1. For prompts shorter than that many patches the
+            # old fixed trim removed part of the generated speech; clamp to the real context length.
+            context_len = min(streaming_prefix_len - 1, int(audio_mask.sum().item()))
+            if context_len > 0:
+                decode_audio = decode_audio[..., patch_len * context_len :].squeeze(1).cpu()
             else:
                 decode_audio = decode_audio[..., :].squeeze(1).cpu()
             yield (decode_audio, target_text_token, pred_audio_feat)
