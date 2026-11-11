@@ -112,7 +112,14 @@ def replace_blank(text: str):
     out_str = []
     for i, c in enumerate(text):
         if c == " ":
-            if (text[i + 1].isascii() and text[i + 1] != " ") and (text[i - 1].isascii() and text[i - 1] != " "):
+            # Keep a blank only when it sits between two ASCII non-space
+            # characters. Guard the neighbour lookups so a leading space
+            # (i == 0) does not wrap around to text[-1] and a trailing
+            # space (i == len(text) - 1) does not raise IndexError. This
+            # mirrors the bounds check already used in split_paragraph().
+            prev_ok = i > 0 and text[i - 1].isascii() and text[i - 1] != " "
+            next_ok = i + 1 < len(text) and text[i + 1].isascii() and text[i + 1] != " "
+            if prev_ok and next_ok:
                 out_str.append(c)
         else:
             out_str.append(c)
