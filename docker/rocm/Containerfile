@@ -1,0 +1,111 @@
+# ─────────────────────────────────────────────────────────────────────
+# VoxCPM WebUI — container image for AMD GPUs (ROCm)
+# ─────────────────────────────────────────────────────────────────────
+# Build with docker/rocm/build.sh (-> localhost/voxcpm:rocm), or by hand
+# from the project root:
+#
+#   podman build -f docker/rocm/Containerfile -t voxcpm:rocm .
+#
+# Run: docker/rocm/run.sh   — details in docker/rocm/README.md
+#
+# Notes
+#  - PyTorch ROCm wheels bundle the ROCm runtime, so no /opt/rocm and
+#    no multi-GB rocm/pytorch base image is needed.
+#  - Consumer GPUs outside the official arch list (e.g. gfx1031 / RX 6700
+#    XT) need HSA_OVERRIDE_GFX_VERSION at run time; run.sh detects it.
+#  - Runs as root (= your user under rootless podman) or any --user UID; all writable
+#    state lives under /app/{models,data,lora,output}.
+# ─────────────────────────────────────────────────────────────────────
+FROM docker.io/library/python:3.11-slim-bookworm
+
+ARG ROCM_INDEX=https://download.pytorch.org/whl/rocm6.4
+ARG TORCH_VERSION=2.9.1
+ARG TORCHCODEC_VERSION=0.8.1
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    VIRTUAL_ENV=/opt/venv \
+    PATH=/opt/venv/bin:$PATH
+
+# git        — setuptools_scm / HF hub
+# ffmpeg     — torchcodec, librosa, whisper pipeline decoding
+# libsndfile1 — soundfile
+# gcc/g++    — triton compiles its kernel launcher at runtime (torch.compile)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git ffmpeg libsndfile1 gcc g++ curl ca-certificates tini libdrm-common \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /opt/amdgpu/share && ln -s /usr/share/libdrm /opt/amdgpu/share/libdrm
+
+RUN python -m venv $VIRTUAL_ENV && pip install --upgrade pip setuptools wheel
+
+# Layer 1: PyTorch ROCm (biggest layer, rarely changes)
+RUN pip install --index-url ${ROCM_INDEX} \
+        torch==${TORCH_VERSION} torchaudio==${TORCH_VERSION} \
+    && pip install torchcodec==${TORCHCODEC_VERSION} \
+    && pip freeze | grep -E '^(torch|torchaudio|torchcodec|pytorch-triton-rocm)==' > /opt/torch-constraints.txt \
+    && cat /opt/torch-constraints.txt
+
+# Every later pip call must keep the ROCm torch, never pull CUDA/CPU torch
+ENV PIP_CONSTRAINT=/opt/torch-constraints.txt
+
+WORKDIR /app
+
+# Layer 2: VoxCPM deps only (cached unless pyproject.toml changes)
+COPY pyproject.toml /app/
+RUN mkdir -p /app/src/voxcpm && echo '__version__ = "0.0.0"' > /app/src/voxcpm/__init__.py
+ENV SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0
+# (setuptools builds in-tree: drop build/ so the stub never leaks into layer 3)
+RUN pip install . && pip uninstall -y voxcpm \
+    && pip install num2words \
+    && rm -rf /app/build /app/src /app/*.egg-info
+
+# Layer 3: project source
+COPY . /app/
+RUN rm -rf /app/build /app/src/*.egg-info \
+    && pip install --no-deps . \
+    && python -c "import voxcpm; voxcpm.VoxCPM" \
+    && mkdir -p /app/models /app/data /app/lora /app/output \
+    && chmod 1777 /app/models /app/data /app/lora /app/output
+
+# ROCm runtime.
+# MIOPEN_FIND_MODE=FAST: the default mode benchmarks conv kernels for every new
+# input shape, i.e. every new text/audio length, which makes TTS on varied text
+# 4-5x slower (measured RTF ~11 vs ~2.3 for long-form chunks on gfx1031).
+ENV MIOPEN_FIND_MODE=FAST \
+    PYTORCH_HIP_ALLOC_CONF=expandable_segments:True \
+    MIOPEN_USER_DB_PATH=/app/models/.cache/miopen \
+    MIOPEN_CUSTOM_CACHE_DIR=/app/models/.cache/miopen
+
+# Caches -> mounted models volume (persist across runs).
+# HOME is set explicitly so a non-root --user (whose home would be
+# missing or root-owned) can still create ~/.modelscope etc.
+ENV HOME=/app/models/.home \
+    HF_HOME=/app/models/hf \
+    MODELSCOPE_CACHE=/app/models/modelscope \
+    XDG_CACHE_HOME=/app/models/.cache \
+    TORCHINDUCTOR_CACHE_DIR=/app/models/.cache/inductor \
+    TRITON_CACHE_DIR=/app/models/.cache/triton \
+    MPLCONFIGDIR=/tmp/matplotlib \
+    GRADIO_TEMP_DIR=/tmp/gradio \
+    GRADIO_ANALYTICS_ENABLED=False
+
+# WebUI settings (see docker/rocm/launch.py)
+ENV PORT=8808 \
+    VOXCPM_MODEL=openbmb/VoxCPM2 \
+    VOXCPM_DTYPE=float16 \
+    VOXCPM_OPTIMIZE=0 \
+    ASR_BACKEND=whisper \
+    ASR_MODEL=openai/whisper-large-v3-turbo \
+    ASR_LANGUAGE= \
+    TEXT_NUMBER_LANG= \
+    GRADIO_SERVER_PORT=8808
+
+VOLUME ["/app/models", "/app/data", "/app/lora", "/app/output"]
+EXPOSE 8808
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+# Default: TTS / clone / voice-design WebUI.
+# LoRA training UI instead:  docker/rocm/run.sh python lora_ft_webui.py
+CMD ["python", "docker/rocm/launch.py"]
