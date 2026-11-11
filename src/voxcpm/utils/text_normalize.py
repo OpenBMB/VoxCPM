@@ -6,6 +6,22 @@ from wetext import Normalizer
 
 chinese_char_pattern = re.compile(r"[\u4e00-\u9fff]+")
 
+# phoneme input such as {ni3}{hao3} or {HH AH0 L OW1}
+phoneme_tag_pattern = re.compile(r"\{[^{}]*\}")
+# private-use character that the normalizers pass through unchanged
+PHONEME_PLACEHOLDER = "\ue000"
+
+
+# swap phoneme tags for placeholders so their tone/stress digits are not normalized
+def protect_phoneme_tags(text):
+    text = text.replace(PHONEME_PLACEHOLDER, "")
+    return phoneme_tag_pattern.sub(PHONEME_PLACEHOLDER, text), phoneme_tag_pattern.findall(text)
+
+
+def restore_phoneme_tags(text, tags):
+    tags = iter(tags)
+    return re.sub(PHONEME_PLACEHOLDER, lambda _: next(tags, ""), text)
+
 
 # whether contain chinese character
 def contains_chinese(text):
@@ -168,6 +184,8 @@ class TextNormalizer:
         self.inflect_parser = inflect.engine()
 
     def normalize(self, text, split=False):
+        # 保留音素输入（如 {ni3}{hao3}），不对其中的声调/重音数字做正则
+        text, phoneme_tags = protect_phoneme_tags(text)
         # 去除 Markdown 语法，去除表情符号，去除换行符
         lang = "zh" if contains_chinese(text) else "en"
         text = clean_text(text)
@@ -184,5 +202,6 @@ class TextNormalizer:
         else:
             text = self.en_tn_model.normalize(text)
             text = spell_out_number(text, self.inflect_parser)
+        text = restore_phoneme_tags(text, phoneme_tags)
         if split is False:
             return text
