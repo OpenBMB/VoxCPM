@@ -641,6 +641,10 @@ class VoxCPM2Model(nn.Module):
         retry_badcase_times = 0
         current_seed = materialize_generation_seed(seed)
         last_attempt_seed = current_seed
+        # retry_badcase_max_times is a public kwarg; 0 (or negative) would skip this loop
+        # entirely, leaving latent_pred/pred_audio_feat/context_len unset and raising
+        # UnboundLocalError at decode. max(1, ...) guarantees at least one attempt.
+        retry_badcase_max_times = max(1, retry_badcase_max_times)
         while retry_badcase_times < retry_badcase_max_times:
             last_attempt_seed = current_seed
             apply_generation_seed(last_attempt_seed)
@@ -937,6 +941,10 @@ class VoxCPM2Model(nn.Module):
         retry_badcase_times = 0
         current_seed = materialize_generation_seed(seed)
         last_attempt_seed = current_seed
+        # retry_badcase_max_times is a public kwarg; 0 (or negative) would skip this loop
+        # entirely, leaving latent_pred/pred_audio_feat/context_len unset and raising
+        # UnboundLocalError at decode. max(1, ...) guarantees at least one attempt.
+        retry_badcase_max_times = max(1, retry_badcase_max_times)
         while retry_badcase_times < retry_badcase_max_times:
             last_attempt_seed = current_seed
             apply_generation_seed(last_attempt_seed)
