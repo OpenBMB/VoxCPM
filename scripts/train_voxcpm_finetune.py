@@ -380,7 +380,11 @@ def train(
                 )
 
             if (step % save_interval == 0 or step == num_iters - 1) and accelerator.rank == 0:
-                save_checkpoint(model, optimizer, scheduler, save_dir, step, pretrained_path, hf_model_id, distribute)
+                # Store step + 1 (the next step to run) as the resume point. load_checkpoint
+                # feeds it straight into range(start_step, ...); storing step made resume
+                # re-run the already-completed step, duplicating one optimizer/scheduler step.
+                # This matches the final save below, which stores num_iters (= last_step + 1).
+                save_checkpoint(model, optimizer, scheduler, save_dir, step + 1, pretrained_path, hf_model_id, distribute)
 
     if accelerator.rank == 0:
         save_checkpoint(model, optimizer, scheduler, save_dir, num_iters, pretrained_path, hf_model_id, distribute)
