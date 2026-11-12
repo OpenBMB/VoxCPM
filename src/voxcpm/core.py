@@ -16,8 +16,9 @@ def resolve_model_path(
     cache_dir: str | None = None,
     local_files_only: bool = False,
 ) -> str:
-    """Resolve a model path: return as-is if it's a local directory,
-    otherwise download from HuggingFace Hub via ``snapshot_download()``.
+    """Resolve a model path: return the absolute path if it's a local directory
+    (``~`` is expanded), otherwise download from HuggingFace Hub via
+    ``snapshot_download()``.
 
     This is the single shared helper used by both
     :meth:`VoxCPM.from_pretrained` (inference) and the training WebUI.
@@ -32,8 +33,9 @@ def resolve_model_path(
     Returns:
         Absolute local filesystem path to the model directory.
     """
-    if os.path.isdir(path_or_id):
-        return path_or_id
+    local_path = os.path.expanduser(path_or_id)
+    if os.path.isdir(local_path):
+        return os.path.abspath(local_path)
     return snapshot_download(
         repo_id=path_or_id,
         cache_dir=cache_dir,
