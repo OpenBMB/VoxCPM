@@ -17,6 +17,21 @@ def WNConvTranspose1d(*args, **kwargs):
     return weight_norm(nn.ConvTranspose1d(*args, **kwargs))
 
 
+def causal_trim_length(padding: int, output_padding: int = 0) -> int:
+    """Samples removed on the right of a causal conv, or padded on the left.
+
+    ``tensor[..., :-0]`` is ``tensor[..., :0]`` and returns an empty waveform,
+    so a length of zero has to stay a no-op at the call site. A negative
+    length is rejected before ``F.pad`` sees it.
+    """
+    trim = padding * 2 - output_padding
+    if trim < 0:
+        raise ValueError(
+            f"causal padding {padding} is smaller than output_padding {output_padding}"
+        )
+    return trim
+
+
 class CausalConv1d(nn.Conv1d):
     def __init__(self, *args, padding: int = 0, output_padding: int = 0, **kwargs):
         super().__init__(*args, **kwargs)
@@ -24,7 +39,8 @@ class CausalConv1d(nn.Conv1d):
         self.__output_padding = output_padding
 
     def forward(self, x):
-        x_pad = F.pad(x, (self.__padding * 2 - self.__output_padding, 0))
+        left = causal_trim_length(self.__padding, self.__output_padding)
+        x_pad = F.pad(x, (left, 0))
         return super().forward(x_pad)
 
 
@@ -35,7 +51,11 @@ class CausalTransposeConv1d(nn.ConvTranspose1d):
         self.__output_padding = output_padding
 
     def forward(self, x):
-        return super().forward(x)[..., : -(self.__padding * 2 - self.__output_padding)]
+        hidden = super().forward(x)
+        trim = causal_trim_length(self.__padding, self.__output_padding)
+        if trim == 0:
+            return hidden
+        return hidden[..., :-trim]
 
 
 def WNCausalConv1d(*args, **kwargs):
