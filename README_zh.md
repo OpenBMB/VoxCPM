@@ -241,6 +241,11 @@ voxcpm clone \
 # 批量处理
 voxcpm batch --input examples/input.txt --output-dir outs
 
+# 查看版本并可选检查 PyPI 更新
+voxcpm version
+voxcpm version --check
+voxcpm version --check --json
+
 # 可选的生成后时间戳对齐（基于 stable-ts）
 pip install "voxcpm[timestamps]"
 voxcpm design \
