@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sys
 import types
+import http.client
 import urllib.error
 from pathlib import Path
 
@@ -121,6 +122,28 @@ def test_fetch_latest_version_wraps_network_errors(monkeypatch):
         raise urllib.error.URLError("offline")
 
     monkeypatch.setattr(version_check.urllib.request, "urlopen", fake_urlopen)
+    with pytest.raises(UpdateCheckError, match="could not reach PyPI"):
+        fetch_latest_version()
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [ConnectionResetError("reset by peer"), http.client.IncompleteRead(b"")],
+)
+def test_fetch_latest_version_wraps_read_errors(monkeypatch, exc):
+    class BrokenResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self, *args, **kwargs):
+            raise exc
+
+    monkeypatch.setattr(
+        version_check.urllib.request, "urlopen", lambda *a, **k: BrokenResponse()
+    )
     with pytest.raises(UpdateCheckError, match="could not reach PyPI"):
         fetch_latest_version()
 

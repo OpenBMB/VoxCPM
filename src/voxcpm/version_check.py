@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import urllib.error
 import urllib.request
@@ -78,7 +79,7 @@ def fetch_latest_version(timeout: float = DEFAULT_TIMEOUT) -> str:
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             payload = json.load(response)
-    except (urllib.error.URLError, TimeoutError, ValueError) as exc:
+    except (OSError, ValueError, http.client.HTTPException) as exc:
         raise UpdateCheckError(f"could not reach PyPI: {exc}") from exc
 
     if not isinstance(payload, dict):
