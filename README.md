@@ -266,6 +266,36 @@ voxcpm --help
 python app.py --port 8808  # then open in browser: http://localhost:8808
 ```
 
+#### Windows launcher
+
+Windows users can set up and start the local web interface with the included launchers:
+
+1. Clone this repository, then double-click `setup-windows.cmd`. This creates an isolated
+   `.venv` and installs the CUDA 12.8 PyTorch wheels and VoxCPM dependencies.
+2. Double-click `start-windows.cmd`. The browser opens at `http://127.0.0.1:8808`, while
+   model loading and generation progress remain visible in the console window.
+
+Install Python 3.10, 3.11, or 3.12 before running setup. The default CUDA 12.8 wheels
+require a compatible NVIDIA driver; for CPU use, set `VOXCPM_TORCH_INDEX_URL` to
+`https://download.pytorch.org/whl/cpu` before setup.
+
+Models download when first used. The launcher binds to `127.0.0.1`, disables Gradio
+and Hugging Face telemetry, and passes `--no-optimize` to avoid Windows compilation
+dependency issues. The browser opens once the server is ready. Press `Ctrl+C` in
+the console to stop the server.
+
+The following optional environment variables customize the launcher:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `VOXCPM_PYTHON` | Python Launcher | Full path to a supported Python executable used during setup |
+| `VOXCPM_TORCH_INDEX_URL` | `https://download.pytorch.org/whl/cu128` | PyTorch wheel index used during setup |
+| `VOXCPM_HOST` | `127.0.0.1` | Web interface bind address |
+| `VOXCPM_PORT` | `8808` | Web interface port |
+| `VOXCPM_DEVICE` | `auto` | Runtime device (`auto`, `cpu`, `cuda`, or `cuda:N`) |
+| `VOXCPM_MODEL` | `openbmb/VoxCPM2` | Hugging Face model ID or local model path |
+| `VOXCPM_OPEN_BROWSER` | `1` | Set to `0` to prevent the browser from opening automatically |
+
 Use `--device` to choose the runtime device:
 
 ```bash
