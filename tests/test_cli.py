@@ -734,3 +734,34 @@ def test_batch_subcommand_passes_seed(monkeypatch, tmp_path):
     assert len(dummy_model.calls) == 2
     assert dummy_model.calls[0]["seed"] == 999
     assert dummy_model.calls[1]["seed"] == 999
+
+
+def _local_model(tmp_path, architecture):
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    (model_dir / "config.json").write_text(json.dumps({"architecture": architecture}), encoding="utf-8")
+    args = types.SimpleNamespace(model_path=str(model_dir), hf_model_id=None, reference_audio="ref.wav")
+    return args
+
+
+def test_detect_model_architecture_normalizes_local_v15_config(tmp_path):
+    """A local VoxCPM1.5 config must resolve to 'voxcpm', like its HF repo id."""
+    args = _local_model(tmp_path, "VoxCPM1.5")
+
+    assert cli.detect_model_architecture(args) == "voxcpm"
+
+
+def test_detect_model_architecture_handles_null_architecture(tmp_path):
+    """A null/optional architecture field must fall back to the default, not crash."""
+    args = _local_model(tmp_path, None)
+
+    assert cli.detect_model_architecture(args) == "voxcpm"
+
+
+def test_reference_audio_rejected_for_local_v15_config(tmp_path):
+    """--reference-audio is unsupported on VoxCPM1.5 even via a local config."""
+    parser = cli._build_parser()
+    args = _local_model(tmp_path, "VoxCPM1.5")
+
+    with pytest.raises(SystemExit):
+        cli.validate_reference_support(args, parser)

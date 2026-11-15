@@ -87,6 +87,16 @@ def resolve_prompt_text(args, parser) -> str | None:
     return None
 
 
+def _normalize_architecture(value) -> str | None:
+    """Map a config value or model id to the canonical 'voxcpm'/'voxcpm2' name."""
+    hint = str(value or "").lower()
+    if "voxcpm2" in hint:
+        return "voxcpm2"
+    if "voxcpm1.5" in hint or "voxcpm-1.5" in hint or "voxcpm_1.5" in hint or hint == "voxcpm":
+        return "voxcpm"
+    return None
+
+
 def detect_model_architecture(args) -> str | None:
     model_location = getattr(args, "model_path", None) or getattr(args, "hf_model_id", None)
     if not model_location:
@@ -98,15 +108,9 @@ def detect_model_architecture(args) -> str | None:
             return None
 
         with open(config_path, "r", encoding="utf-8") as f:
-            return json.load(f).get("architecture", "voxcpm").lower()
+            return _normalize_architecture(json.load(f).get("architecture") or "voxcpm")
 
-    model_hint = str(model_location).lower()
-    if "voxcpm2" in model_hint:
-        return "voxcpm2"
-    if "voxcpm1.5" in model_hint or "voxcpm-1.5" in model_hint or "voxcpm_1.5" in model_hint:
-        return "voxcpm"
-
-    return None
+    return _normalize_architecture(model_location)
 
 
 def validate_prompt_related_args(args, parser, prompt_text: str | None):
