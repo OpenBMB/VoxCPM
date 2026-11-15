@@ -7,6 +7,20 @@ from pathlib import Path
 from typing import Dict, Optional
 
 
+def _format_metric(value) -> str:
+    """Format a logged metric without raising on tensors or other numeric wrappers."""
+    item = getattr(value, "item", None)
+    if callable(item):
+        try:
+            value = item()
+        except Exception:
+            return str(value)
+    try:
+        return f"{float(value):.6f}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
 class TrainingTracker:
     """
     Lightweight tracker inspired by the minimcpm-audio training workflow.
@@ -29,8 +43,8 @@ class TrainingTracker:
             self.log_file.parent.mkdir(parents=True, exist_ok=True)
         self.rank = rank
         self.step = 0
-        # Record the time of the last log to calculate the interval
-        self._last_log_time: float | None = None
+        # Per-split timestamps so a validation log does not report the gap since the last training log.
+        self._last_log_time: Dict[str, float] = {}
 
     # ------------------------------------------------------------------ #
     # Logging helpers
@@ -46,12 +60,13 @@ class TrainingTracker:
         if self.rank == 0:
             now = time.time()
             dt_str = ""
-            if self._last_log_time is not None:
-                dt = now - self._last_log_time
+            previous = self._last_log_time.get(split)
+            if previous is not None:
+                dt = now - previous
                 dt_str = f", log interval: {dt:.2f}s"
-            self._last_log_time = now
+            self._last_log_time[split] = now
 
-            formatted = ", ".join(f"{k}: {v:.6f}" for k, v in metrics.items())
+            formatted = ", ".join(f"{k}: {_format_metric(v)}" for k, v in metrics.items())
             self.print(f"[{split}] step {self.step}: {formatted}{dt_str}")
         if self.writer is not None:
             for key, value in metrics.items():
