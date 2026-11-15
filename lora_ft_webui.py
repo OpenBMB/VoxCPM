@@ -266,8 +266,11 @@ def run_inference(text, prompt_wav, prompt_text, lora_selection, cfg_scale, step
         current_model.set_lora_enabled(False)
 
     if seed != -1:
-        torch.manual_seed(seed)
-        np.random.seed(seed)
+        # seed comes from a gr.Number with no min/max; np.random.seed only accepts
+        # 0 <= seed <= 2**32 - 1 and raises ValueError otherwise (e.g. a negative seed
+        # other than -1, or a value above 2**32-1). Normalise so Generate never crashes.
+        torch.manual_seed(int(seed))
+        np.random.seed(int(seed) % (2**32))
 
     # 处理 prompt 参数：必须同时为 None 或同时有值
     final_prompt_wav = None
@@ -298,7 +301,7 @@ def run_inference(text, prompt_wav, prompt_text, lora_selection, cfg_scale, step
             prompt_wav_path=final_prompt_wav,
             prompt_text=final_prompt_text,
             cfg_value=cfg_scale,
-            inference_timesteps=steps,
+            inference_timesteps=int(steps),  # gr.Slider yields a float; torch.linspace needs an int
             denoise=False,
         )
         return (current_model.tts_model.sample_rate, audio_np), "Generation Success"
