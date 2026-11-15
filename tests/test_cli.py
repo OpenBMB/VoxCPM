@@ -645,6 +645,38 @@ def test_batch_rejects_control_with_prompt_transcript(monkeypatch, tmp_path, cap
     assert "--control cannot be used together" in capsys.readouterr().err
 
 
+def test_batch_invalid_args_do_not_create_output_directory(monkeypatch, tmp_path):
+    input_file = tmp_path / "texts.txt"
+    input_file.write_text("hello\n", encoding="utf-8")
+    prompt_audio = tmp_path / "prompt.wav"
+    prompt_audio.write_bytes(b"RIFF")
+    output_dir = tmp_path / "outs"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "voxcpm",
+            "batch",
+            "--input",
+            str(input_file),
+            "--output-dir",
+            str(output_dir),
+            "--control",
+            "calm narrator",
+            "--prompt-audio",
+            str(prompt_audio),
+            "--prompt-text",
+            "transcript",
+        ],
+    )
+
+    with pytest.raises(SystemExit):
+        cli.main()
+
+    assert not output_dir.exists()
+
+
 def test_detect_model_architecture_uses_local_configs():
     parser = cli._build_parser()
     v1_args = parser.parse_args(

@@ -296,6 +296,7 @@ def cmd_validate(args, parser):
 
 
 def cmd_batch(args, parser):
+    prompt_text = validate_batch_args(args, parser)
     input_file = require_file_exists(args.input, parser, "input file")
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -306,7 +307,6 @@ def cmd_batch(args, parser):
     if not texts:
         sys.exit("Error: Input file is empty")
 
-    prompt_text = validate_batch_args(args, parser)
     model = load_model(args)
 
     import soundfile as sf
