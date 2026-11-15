@@ -38,14 +38,32 @@ def _manifest_features(
         features[dataset_id_column] = Value("int64")
 
     for manifest_path in manifest_paths:
+        # Infer each unknown column from the first record in which its type is
+        # determinable. Reading only the first line (as before) let a leading row
+        # with a null or empty-list column fix the schema wrongly -- e.g. an empty
+        # ``text_ids`` list was typed as Sequence(string), silently coercing every
+        # later row's integer token ids to strings (and crashing collation).
         with Path(manifest_path).open("r", encoding="utf-8") as manifest:
-            first_line = next((line for line in manifest if line.strip()), "")
-        if not first_line:
-            continue
-        first_record = json.loads(first_line)
-        for column, value in first_record.items():
-            if column not in features and value is not None:
-                features[column] = _feature_from_value(value)
+            for line in manifest:
+                if not line.strip():
+                    continue
+                record = json.loads(line)
+                unresolved = False
+                for column, value in record.items():
+                    if column in features:
+                        continue
+                    if value is None:
+                        unresolved = True
+                        continue
+                    feature = _feature_from_value(value)
+                    if feature is None:
+                        unresolved = True
+                    else:
+                        features[column] = feature
+                # Fast path: stop once a record resolves all of its columns. Only keep
+                # scanning while some column is still null/empty and thus untyped.
+                if not unresolved:
+                    break
     return Features(features)
 
 
@@ -59,10 +77,25 @@ def _feature_from_value(value):
     if isinstance(value, str):
         return Value("string")
     if isinstance(value, list):
-        first_value = next((item for item in value if item is not None), "")
-        return Sequence(_feature_from_value(first_value))
+        # Element type can only be inferred from a concrete, non-null element.
+        # Return None (indeterminate) for an empty/all-null list so the caller can
+        # keep scanning later records instead of defaulting to Sequence(string).
+        for item in value:
+            if item is not None:
+                element = _feature_from_value(item)
+                if element is not None:
+                    return Sequence(element)
+        return None
     if isinstance(value, dict):
-        return {key: _feature_from_value(item) for key, item in value.items() if item is not None}
+        fields = {}
+        for key, item in value.items():
+            if item is None:
+                continue
+            field = _feature_from_value(item)
+            if field is None:
+                return None
+            fields[key] = field
+        return fields or None
     raise ValueError(f"Unsupported manifest field type: {type(value).__name__}")
 
 
