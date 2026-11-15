@@ -31,23 +31,50 @@ def remove_bracket(text):
     return text
 
 
+def _ordinal_suffix(digits: str) -> str:
+    # 11th/12th/13th, including 111th/112th/113th.
+    value = int(digits)
+    if 11 <= (value % 100) <= 13:
+        return "th"
+    return {1: "st", 2: "nd", 3: "rd"}.get(value % 10, "th")
+
+
 # spell Arabic numerals
 def spell_out_number(text: str, inflect_parser):
     new_text = []
-    st = None
-    for i, c in enumerate(text):
-        if not c.isdigit():
-            if st is not None:
-                num_str = inflect_parser.number_to_words(text[st:i])
-                new_text.append(num_str)
-                st = None
-            new_text.append(c)
-        else:
-            if st is None:
-                st = i
-    if st is not None and st < len(text):
-        num_str = inflect_parser.number_to_words(text[st:])
-        new_text.append(num_str)
+    i = 0
+    length = len(text)
+    while i < length:
+        if not text[i].isdigit():
+            new_text.append(text[i])
+            i += 1
+            continue
+
+        start = i
+        while i < length and text[i].isdigit():
+            i += 1
+        digits = text[start:i]
+        token = digits
+        suffix = text[i : i + 2]
+        if (
+            digits.isdecimal()
+            and len(suffix) == 2
+            and suffix.isalpha()
+            and suffix.lower() == _ordinal_suffix(digits)
+            and (i + 2 == length or not text[i + 2].isalpha())
+        ):
+            # "3rd" is one spoken word. A longer letter run is not a suffix ("3rdogs").
+            token = f"{int(digits)}{suffix.lower()}"
+            i += 2
+
+        spelled = inflect_parser.number_to_words(token)
+        # Spoken numbers are words; fusing them with adjacent letters yields
+        # "sectionthree" / "threedogs", which TTS reads as a single token.
+        if start > 0 and text[start - 1].isalpha():
+            spelled = " " + spelled
+        if i < length and text[i].isalpha():
+            spelled = spelled + " "
+        new_text.append(spelled)
     return "".join(new_text)
 
 
