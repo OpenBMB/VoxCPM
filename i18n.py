@@ -167,8 +167,20 @@ STRINGS = {
 }
 
 
+def normalize_lang(lang: str | None) -> str:
+    """Map locale tags such as ``zh-CN`` or ``EN_us`` onto a catalog language."""
+    token = (lang or "").strip().lower().replace("_", "-")
+    if token in STRINGS:
+        return token
+    primary = token.split("-", 1)[0]
+    if primary in STRINGS:
+        return primary
+    return "en"
+
+
 def t(key: str, lang: str = None) -> str:
     """Get translated string. Uses DEFAULT_LANG if lang not specified."""
     if lang is None:
         lang = DEFAULT_LANG
+    lang = normalize_lang(lang)
     return STRINGS.get(lang, STRINGS["en"]).get(key, STRINGS["en"].get(key, key))
