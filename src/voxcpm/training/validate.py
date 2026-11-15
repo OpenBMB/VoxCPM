@@ -80,6 +80,7 @@ def validate_manifest(
         5. Text content is non-empty
         6. Collects duration and text length statistics
         7. Validates optional ref_audio column
+        8. Warns when the same audio file is listed on more than one line
 
     Args:
         manifest_path: Path to the JSONL manifest file.
@@ -120,6 +121,8 @@ def validate_manifest(
 
     missing_audio_count = 0
     empty_text_count = 0
+    seen_audio_paths = {}
+    duplicate_audio_count = 0
 
     for i, line in enumerate(lines[:samples_to_check]):
         line = line.strip()
@@ -173,6 +176,20 @@ def validate_manifest(
             if not os.path.isabs(audio_path):
                 audio_path = str(manifest_dir / audio_path)
 
+            # Compare resolved paths so relative and absolute references to the
+            # same file are treated as duplicates.
+            canonical_audio = os.path.abspath(audio_path)
+            first_seen = seen_audio_paths.get(canonical_audio)
+            if first_seen is None:
+                seen_audio_paths[canonical_audio] = i + 1
+            else:
+                duplicate_audio_count += 1
+                if duplicate_audio_count <= 5:
+                    result.warnings.append(
+                        f"Line {i + 1}: Duplicate audio path "
+                        f"(first seen on line {first_seen}): {canonical_audio}"
+                    )
+
             audio_error = _check_audio_file(audio_path, sample_rate)
             if audio_error:
                 missing_audio_count += 1
@@ -217,6 +234,10 @@ def validate_manifest(
         )
     if empty_text_count > 5:
         result.warnings.append(f"... and {empty_text_count - 5} more empty text entries " f"({empty_text_count} total)")
+    if duplicate_audio_count > 5:
+        result.warnings.append(
+            f"... and {duplicate_audio_count - 5} more duplicate audio paths " f"({duplicate_audio_count} total)"
+        )
 
     return result
 

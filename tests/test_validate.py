@@ -238,6 +238,29 @@ class TestValidateManifest:
         assert result.has_ref_audio == 1
         assert any("ref_audio file not found" in w for w in result.warnings)
 
+    def test_duplicate_audio_path_warned(self, tmp_dir):
+        """Relative and absolute references to the same file should warn."""
+        audio = tmp_dir / "audio.wav"
+        _create_wav(audio)
+        manifest = tmp_dir / "dup.jsonl"
+        _write_manifest(
+            manifest,
+            [
+                {"text": "first take", "audio": "audio.wav"},
+                {"text": "second take", "audio": str(audio)},
+            ],
+        )
+        result = validate_manifest(str(manifest))
+        assert result.total_samples == 2
+        assert result.valid_samples == 2
+        assert result.is_valid
+        assert len(result.errors) == 0
+        dup_warnings = [w for w in result.warnings if "Duplicate audio path" in w]
+        assert len(dup_warnings) == 1
+        assert "Line 2:" in dup_warnings[0]
+        assert "line 1" in dup_warnings[0]
+        assert "audio.wav" in dup_warnings[0]
+
     def test_cli_validate_exit_code(self, tmp_dir):
         """validate subcommand must exit 1 on validation error (missing audio)."""
         import subprocess
