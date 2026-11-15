@@ -80,12 +80,14 @@ def split_paragraph(text: str, tokenize, lang="zh", token_max_n=80, token_min_n=
         if c in pounc:
             if len(text[st:i]) > 0:
                 utts.append(text[st:i] + c)
-            if i + 1 < len(text) and text[i + 1] in ['"', "”"]:
-                tmp = utts.pop(-1)
-                utts.append(tmp + text[i + 1])
+            if i + 1 < len(text) and text[i + 1] in ['"', "”"] and utts:
+                utts[-1] = utts[-1] + text[i + 1]
                 st = i + 2
             else:
                 st = i + 1
+    trailing = text[st:]
+    if utts and trailing.strip():
+        utts.append(trailing)
     if len(utts) == 0:
         if lang == "zh":
             utts.append(text + "。")
