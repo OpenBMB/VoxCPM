@@ -10,7 +10,7 @@ def load_yaml_config(path: str | Path) -> Dict[str, Any]:
     """
     Load a YAML configuration file into a dictionary suitable for argbind.
     """
-    path = Path(path)
+    path = Path(path).expanduser()
     with path.open("r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
     if not isinstance(data, dict):
