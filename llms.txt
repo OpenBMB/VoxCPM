@@ -1,0 +1,27 @@
+# VoxCPM
+
+> A tokenizer-free text-to-speech system that generates natural multilingual speech, designs new voices from text descriptions, and clones voices from short reference clips.
+
+Python ≥ 3.10; install via pip and use the Python API, CLI, or web demo. VoxCPM2 is a 2B-parameter model supporting 30 languages, 48kHz output, and streaming inference (~0.3 RTF on RTX 4090, ~0.13 with Nano-vLLM). Production serving uses vLLM-Omni with an OpenAI-compatible endpoint; on-device inference is available via llama.cpp-omni with GGUF weights. Apache-2.0 licensed, free for commercial use.
+
+## Docs
+
+- [VoxCPM README](https://raw.githubusercontent.com/OpenBMB/VoxCPM/main/README.md): Overview of the tokenizer-free 2B TTS model with 30-language support, voice design, controllable cloning, and 48kHz output.
+- [Quick Start](https://github.com/OpenBMB/VoxCPM/blob/main/README.md#-quick-start): Installation requirements, production serving with vLLM-Omni, and on-device inference via llama.cpp-omni with GGUF weights.
+- [Models & Versions](https://github.com/OpenBMB/VoxCPM/blob/main/README.md#-models--versions): The tokenizer-free diffusion autoregressive architecture operating in AudioVAE V2 latent space through the LocEnc, TSLM, RALM, LocDiT pipeline.
+- [Performance](https://github.com/OpenBMB/VoxCPM/blob/main/README.md#-performance): Benchmark results on Seed-TTS-eval, CV3-eval, MiniMax-MLS, an internal 30-language ASR benchmark, and InstructTTSEval.
+- [Fine-tuning](https://github.com/OpenBMB/VoxCPM/blob/main/README.md#%EF%B8%8F-fine-tuning): Full SFT and LoRA fine-tuning with 5-10 minutes of audio, covering data preparation, configuration, training, and LoRA hot-swapping.
+- [Ecosystem & Community](https://github.com/OpenBMB/VoxCPM/blob/main/README.md#-ecosystem--community): Community projects built around VoxCPM, with instructions for contributing via issue or PR.
+- [Risks and Limitations](https://github.com/OpenBMB/VoxCPM/blob/main/README.md#%EF%B8%8F-risks-and-limitations): Misuse risks, generation stability variability, 30-language coverage limits, and Apache-2.0 licensing guidance.
+
+## API & CLI
+
+- [Python API](https://github.com/OpenBMB/VoxCPM/blob/main/README.md#python-api): The `voxcpm` Python package — `VoxCPM.from_pretrained("openbmb/VoxCPM2")` with text-to-speech, voice design, and controllable voice cloning entry points.
+- [CLI Usage](https://github.com/OpenBMB/VoxCPM/blob/main/README.md#cli-usage): Command-line generation — voice design, controllable cloning, ultimate cloning, batch processing, and post-generation timestamps.
+- [Web Demo](https://github.com/OpenBMB/VoxCPM/blob/main/README.md#web-demo): Gradio web UI for interactive generation.
+
+## Optional
+
+- [License](https://github.com/OpenBMB/VoxCPM/blob/main/LICENSE): Apache-2.0 license for code and model weights.
+- [Chinese README](https://github.com/OpenBMB/VoxCPM/blob/main/README_zh.md): README in Simplified Chinese.
+- [Citation](https://github.com/OpenBMB/VoxCPM/blob/main/README.md#-citation): BibTeX entries for the VoxCPM and VoxCPM2 technical reports.
