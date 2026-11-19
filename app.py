@@ -326,9 +326,9 @@ class VoxCPMDemo:
         prompt_text_clean = (prompt_text or "").strip() or None
 
         if audio_path and prompt_text_clean:
-            logger.info(f"[Voice Cloning] prompt_wav + prompt_text + reference_wav")
+            logger.info("[Voice Cloning] prompt_wav + prompt_text + reference_wav")
         elif audio_path:
-            logger.info(f"[Voice Control] reference_wav only")
+            logger.info("[Voice Control] reference_wav only")
         else:
             logger.info(f"[Voice Design] control: {control[:50] if control else 'None'}...")
 

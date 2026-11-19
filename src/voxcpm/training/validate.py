@@ -224,7 +224,7 @@ def validate_manifest(
 def print_validation_report(result: ValidationResult, manifest_path: str) -> None:
     """Print a human-readable validation report to stderr."""
     print(f"\n{'=' * 60}", file=sys.stderr)
-    print(f"  VoxCPM Training Data Validation Report", file=sys.stderr)
+    print("  VoxCPM Training Data Validation Report", file=sys.stderr)
     print(f"{'=' * 60}", file=sys.stderr)
     print(f"  Manifest : {manifest_path}", file=sys.stderr)
     print(f"  Samples  : {result.valid_samples}/{result.total_samples} valid", file=sys.stderr)
@@ -239,7 +239,7 @@ def print_validation_report(result: ValidationResult, manifest_path: str) -> Non
     if result.audio_durations:
         durations = sorted(result.audio_durations)
         total_hrs = sum(durations) / 3600
-        print(f"\n  Audio Duration Statistics:", file=sys.stderr)
+        print("\n  Audio Duration Statistics:", file=sys.stderr)
         print(f"    Total    : {total_hrs:.2f} hours", file=sys.stderr)
         print(
             f"    Range    : {durations[0]:.2f}s — {durations[-1]:.1f}s",
@@ -255,7 +255,7 @@ def print_validation_report(result: ValidationResult, manifest_path: str) -> Non
     # Text length statistics
     if result.text_lengths:
         lengths = sorted(result.text_lengths)
-        print(f"\n  Text Length Statistics (characters):", file=sys.stderr)
+        print("\n  Text Length Statistics (characters):", file=sys.stderr)
         print(
             f"    Range    : {lengths[0]} — {lengths[-1]}",
             file=sys.stderr,
