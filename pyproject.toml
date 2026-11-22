@@ -38,6 +38,7 @@ dependencies = [
     "datasets>=3,<4",
     "huggingface-hub",
     "pydantic",
+    "packaging",
     "tqdm",
     "simplejson",
     "sortedcontainers",

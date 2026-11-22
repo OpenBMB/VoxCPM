@@ -734,3 +734,39 @@ def test_batch_subcommand_passes_seed(monkeypatch, tmp_path):
     assert len(dummy_model.calls) == 2
     assert dummy_model.calls[0]["seed"] == 999
     assert dummy_model.calls[1]["seed"] == 999
+
+
+def test_version_command_prints_installed_version(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "get_installed_version", lambda: "2.0.3")
+    run_main(monkeypatch, ["version"])
+    assert capsys.readouterr().out.strip() == "voxcpm 2.0.3"
+
+
+def test_version_check_json(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "get_installed_version", lambda: "2.0.2")
+    monkeypatch.setattr(
+        cli,
+        "check_for_updates",
+        lambda: {
+            "installed": "2.0.2",
+            "latest": "2.0.3",
+            "status": "outdated",
+            "update_available": True,
+        },
+    )
+    run_main(monkeypatch, ["version", "--check", "--json"])
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["latest"] == "2.0.3"
+    assert payload["update_available"] is True
+
+
+def test_version_check_failure_returns_nonzero(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "get_installed_version", lambda: "2.0.3")
+
+    def fail():
+        raise cli.UpdateCheckError("offline")
+
+    monkeypatch.setattr(cli, "check_for_updates", fail)
+    monkeypatch.setattr(sys, "argv", ["voxcpm", "version", "--check"])
+    assert cli.main() == 1
+    assert "Update check failed" in capsys.readouterr().err

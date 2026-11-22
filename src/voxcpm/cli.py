@@ -12,6 +12,15 @@ import sys
 from pathlib import Path
 
 from voxcpm.timestamps import align_audio_file
+from voxcpm.version_check import (
+    STATUS_AHEAD,
+    STATUS_DEVELOPMENT,
+    STATUS_OUTDATED,
+    STATUS_UNKNOWN,
+    UpdateCheckError,
+    check_for_updates,
+    get_installed_version,
+)
 
 DEFAULT_HF_MODEL_ID = "openbmb/VoxCPM2"
 
@@ -295,6 +304,48 @@ def cmd_validate(args, parser):
         sys.exit(1)
 
 
+def cmd_version(args):
+    """Print the installed version and optionally check PyPI for a newer release."""
+    installed = get_installed_version()
+
+    if not args.check:
+        if args.json:
+            print(json.dumps({"installed": installed}))
+        else:
+            print(f"voxcpm {installed}")
+        return 0
+
+    try:
+        result = check_for_updates()
+    except UpdateCheckError as exc:
+        if args.json:
+            print(json.dumps({"installed": installed, "status": "error", "error": str(exc)}))
+        else:
+            print(f"voxcpm {installed}", file=sys.stderr)
+            print(f"Update check failed: {exc}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(result))
+        return 0
+
+    print(f"voxcpm {result['installed']}")
+    print(f"Latest release on PyPI: {result['latest']}")
+
+    status = result["status"]
+    if status == STATUS_OUTDATED:
+        print("A newer release is available. Upgrade with: pip install -U voxcpm")
+    elif status == STATUS_DEVELOPMENT:
+        print("This is a development build; compare it with the latest release above.")
+    elif status == STATUS_AHEAD:
+        print("Installed version is newer than the latest PyPI release.")
+    elif status == STATUS_UNKNOWN:
+        print("Could not compare the installed and latest versions automatically.")
+    else:
+        print("Already up to date.")
+    return 0
+
+
 def cmd_batch(args, parser):
     input_file = require_file_exists(args.input, parser, "input file")
     output_dir = Path(args.output_dir)
@@ -552,6 +603,8 @@ Examples:
   voxcpm design --text "Hello world" --control "warm female voice" --output out.wav
   voxcpm clone --text "Hello" --reference-audio ref.wav --output out.wav
   voxcpm batch --input texts.txt --output-dir ./outs --reference-audio ref.wav
+  voxcpm version
+  voxcpm version --check
         """,
     )
 
@@ -625,6 +678,21 @@ Examples:
     )
     validate_parser.add_argument("--verbose", "-v", action="store_true", help="Print per-sample progress")
 
+    version_parser = subparsers.add_parser(
+        "version",
+        help="Show the installed version and optionally check PyPI for updates",
+    )
+    version_parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Query PyPI for the latest voxcpm release",
+    )
+    version_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print machine-readable JSON",
+    )
+
     # Legacy root arguments
     parser.add_argument("--input", "-i", help="Input text file (batch mode only)")
     parser.add_argument("--output-dir", "-od", help="Output directory (batch mode only)")
@@ -667,6 +735,9 @@ def main():
     parser = _build_parser()
     args = parser.parse_args()
 
+    if args.command == "version":
+        return cmd_version(args)
+
     if args.command == "validate":
         return cmd_validate(args, parser)
 
@@ -689,4 +760,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
