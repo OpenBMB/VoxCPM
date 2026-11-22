@@ -141,9 +141,7 @@ def test_fetch_latest_version_wraps_read_errors(monkeypatch, exc):
         def read(self, *args, **kwargs):
             raise exc
 
-    monkeypatch.setattr(
-        version_check.urllib.request, "urlopen", lambda *a, **k: BrokenResponse()
-    )
+    monkeypatch.setattr(version_check.urllib.request, "urlopen", lambda *a, **k: BrokenResponse())
     with pytest.raises(UpdateCheckError, match="could not reach PyPI"):
         fetch_latest_version()
 
