@@ -196,20 +196,21 @@ class MiniCPMAttention(nn.Module):
         key_cache[:, :, position_id, :] = key_states
         value_cache[:, :, position_id, :] = value_states
 
-        # Use an explicit broadcastable mask shape for SDPA. A 1D mask can
-        # trigger a CPU-side dimension bug in some PyTorch versions.
-        attn_mask = (torch.arange(key_cache.size(2), device=key_cache.device) <= position_id).view(1, 1, 1, -1)
+        # Attend only to the populated prefix of the static cache: positions
+        # beyond position_id are allocated but empty, so computing them wastes
+        # max_length/(position_id+1) of the attention FLOPs. Slicing to the
+        # prefix makes causality structural, so no explicit mask is needed.
+        n = min(int(position_id) + 1, key_cache.size(2))
+        key_prefix = key_cache[:, :, :n, :].contiguous()
+        value_prefix = value_cache[:, :, :n, :].contiguous()
 
         # ref: https://github.com/pytorch/pytorch/issues/163597
         # there is a bug in MPS for non-contiguous tensors, so we need to make them contiguous
         query_states = query_states.contiguous()
-        key_cache = key_cache.contiguous()
-        value_cache = value_cache.contiguous()
         attn_output = torch.nn.functional.scaled_dot_product_attention(
             query_states,
-            key_cache,
-            value_cache,
-            attn_mask=attn_mask,
+            key_prefix,
+            value_prefix,
             enable_gqa=True,
         )
 
