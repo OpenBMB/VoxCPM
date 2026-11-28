@@ -35,6 +35,8 @@ def apply_generation_seed(seed: int) -> None:
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+    if _has_xpu():
+        torch.xpu.manual_seed_all(seed)
 
 
 def mask_multichar_chinese_tokens(tokenizer: PreTrainedTokenizer):
@@ -159,6 +161,10 @@ def _has_mps() -> bool:
     return hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
 
 
+def _has_xpu() -> bool:
+    return hasattr(torch, "xpu") and torch.xpu.is_available()
+
+
 def pick_runtime_dtype(device: str, configured_dtype: str) -> str:
     """Pick a safe runtime dtype for the resolved device.
 
@@ -190,11 +196,13 @@ def auto_select_device(preferred_device: Optional[str] = "cuda") -> str:
 
     Preference order:
     - if the preferred device is available, use it
-    - otherwise fall back to CUDA -> MPS -> CPU
+    - otherwise fall back to CUDA -> XPU -> MPS -> CPU
     """
     preferred = (preferred_device or "cuda").strip().lower()
 
     if preferred.startswith("cuda") and torch.cuda.is_available():
+        return preferred
+    if preferred.startswith("xpu") and _has_xpu():
         return preferred
     if preferred == "mps" and _has_mps():
         return "mps"
@@ -203,6 +211,8 @@ def auto_select_device(preferred_device: Optional[str] = "cuda") -> str:
 
     if torch.cuda.is_available():
         return "cuda"
+    if _has_xpu():
+        return "xpu"
     if _has_mps():
         return "mps"
     return "cpu"
@@ -227,6 +237,12 @@ def resolve_runtime_device(device: Optional[str], configured_device: str = "cuda
                 f"Requested device '{device}', but CUDA is not available. " "Use device='auto' for automatic fallback."
             )
         return explicit
+    if explicit == "xpu" or explicit.startswith("xpu:"):
+        if not _has_xpu():
+            raise ValueError(
+                f"Requested device '{device}', but XPU is not available. " "Use device='auto' for automatic fallback."
+            )
+        return explicit
     if explicit == "mps":
         if not _has_mps():
             raise ValueError(
@@ -238,5 +254,5 @@ def resolve_runtime_device(device: Optional[str], configured_device: str = "cuda
 
     raise ValueError(
         f"Unsupported device '{device}'. Supported values are 'auto', 'cpu', 'mps', "
-        "'cuda', or indexed CUDA devices like 'cuda:0'."
+        "'cuda', 'xpu', or indexed devices like 'cuda:0' and 'xpu:0'."
     )

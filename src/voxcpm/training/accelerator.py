@@ -12,6 +12,10 @@ import torch.utils.data
 from torch.nn.parallel import DistributedDataParallel
 
 
+def _has_xpu() -> bool:
+    return hasattr(torch, "xpu") and torch.xpu.is_available()
+
+
 class Accelerator:
     """
     Simplified accelerator that mirrors the behaviour of the minicpm-audio
@@ -46,8 +50,19 @@ class Accelerator:
             def update(self):
                 pass
 
-        self.scaler = torch.amp.GradScaler("cuda") if (amp and torch.cuda.is_available()) else DummyScaler()
-        self.device_ctx = torch.cuda.device(self.local_rank) if torch.cuda.is_available() else None
+        if amp and torch.cuda.is_available():
+            self.scaler = torch.amp.GradScaler("cuda")
+        elif amp and _has_xpu():
+            self.scaler = torch.amp.GradScaler("xpu")
+        else:
+            self.scaler = DummyScaler()
+
+        if torch.cuda.is_available():
+            self.device_ctx = torch.cuda.device(self.local_rank)
+        elif _has_xpu():
+            self.device_ctx = torch.xpu.device(self.local_rank)
+        else:
+            self.device_ctx = None
         self._ddp_model = None  # For no_sync support
 
     def _set_seed(self, seed: int):
@@ -57,6 +72,8 @@ class Accelerator:
         random.seed(seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
+        if _has_xpu():
+            torch.xpu.manual_seed_all(seed)
 
     def __enter__(self):
         if self.device_ctx is not None:
@@ -107,6 +124,8 @@ class Accelerator:
     def device(self):
         if torch.cuda.is_available():
             return torch.device("cuda", self.local_rank)
+        if _has_xpu():
+            return torch.device("xpu", self.local_rank)
         if torch.backends.mps.is_available():
             return torch.device("mps")
         return torch.device("cpu")
@@ -115,7 +134,8 @@ class Accelerator:
     # AMP helpers
     # ------------------------------------------------------------------ #
     def autocast(self, *args, **kwargs):
-        return torch.amp.autocast("cuda", enabled=self.amp, *args, **kwargs)
+        device_type = "xpu" if (_has_xpu() and not torch.cuda.is_available()) else "cuda"
+        return torch.amp.autocast(device_type, enabled=self.amp, *args, **kwargs)
 
     def backward(self, loss: torch.Tensor):
         self.scaler.scale(loss).backward()
@@ -155,7 +175,7 @@ class Accelerator:
             num_workers=num_workers,
             collate_fn=collate_fn,
             drop_last=drop_last,
-            pin_memory=True,
+            pin_memory=torch.cuda.is_available(),
         )
 
     @staticmethod
