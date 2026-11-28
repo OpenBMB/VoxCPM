@@ -160,7 +160,7 @@ class VoxCPM:
                 to download.
             device: Runtime device. Use ``None``/``"auto"`` for automatic
                 fallback, or an explicit value such as ``"cpu"``, ``"mps"``,
-                ``"cuda"``, or ``"cuda:0"``.
+                ``"cuda"``, ``"cuda:0"``, ``"xpu"`` (Intel GPU), or ``"xpu:0"``.
             lora_config: LoRA configuration for fine-tuning. If lora_weights_path is
                 provided without lora_config, a default config will be created with
                 enable_lm=True and enable_dit=True.

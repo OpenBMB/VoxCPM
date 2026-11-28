@@ -455,7 +455,7 @@ def _add_model_args(parser):
         "--device",
         type=str,
         default="auto",
-        help="Runtime device: auto, cpu, mps, cuda, or cuda:N (default: auto)",
+        help="Runtime device: auto, cpu, mps, cuda, cuda:N, xpu, or xpu:N (default: auto)",
     )
     parser.add_argument("--cache-dir", type=str, help="Cache directory for Hub downloads")
     parser.add_argument("--local-files-only", action="store_true", help="Disable network access")
