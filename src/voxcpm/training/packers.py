@@ -35,10 +35,17 @@ class AudioFeatureProcessingPacker:
     # ------------------------------------------------------------------ #
     @staticmethod
     def _first_pad_position(tokens: torch.Tensor):
-        positions = (tokens == -100).nonzero(as_tuple=True)
-        if positions[0].numel() == 0:
+        # Equivalent to the first index along dim 0 of ``(tokens == -100).nonzero()``, but computed with
+        # ``any`` + ``argmax`` so that ``nonzero()`` is avoided (it has failed intermittently on Intel XPU).
+        mask = tokens == -100
+        if mask.numel() == 0:
             return None
-        return int(positions[0][0])
+        if mask.dim() == 0:
+            mask = mask.reshape(1)
+        has_pad = mask.reshape(mask.shape[0], -1).any(dim=1)
+        if not bool(has_pad.any()):
+            return None
+        return int(has_pad.to(torch.int32).argmax())
 
     def unpad_text_tokens(self, tokens: torch.Tensor):
         pad_pos = self._first_pad_position(tokens)
