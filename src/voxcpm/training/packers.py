@@ -36,7 +36,8 @@ class AudioFeatureProcessingPacker:
     @staticmethod
     def _first_pad_position(tokens: torch.Tensor):
         # Equivalent to the first index along dim 0 of ``(tokens == -100).nonzero()``, but computed with
-        # ``any`` + ``argmax`` so that ``nonzero()`` is avoided (it has failed intermittently on Intel XPU).
+        # ``any`` + ``argmax`` so that ``nonzero()`` is avoided: on Intel XPU it can drop indices,
+        # see https://github.com/pytorch/pytorch/issues/206952
         mask = tokens == -100
         if mask.numel() == 0:
             return None
